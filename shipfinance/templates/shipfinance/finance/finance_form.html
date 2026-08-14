@@ -1,0 +1,67 @@
+{% extends "shipfinance/base.html" %}
+{% load i18n %}
+{% block shipfinance_content %}
+<h1>Finance: {{ offer.name }}</h1>
+<p class="text-muted">{{ offer.doctrine_fit.name }} - {{ available_count }} available</p>
+
+<div class="row mb-4">
+  <div class="col-md-6">
+    <h3>Payment Summary</h3>
+    <table class="table">
+      <tr><th>Principal (ship price)</th><td>{{ offer.principal }} ISK</td></tr>
+      <tr><th>Term</th><td>{{ offer.term_months }} months</td></tr>
+      <tr><th>Interest</th><td>{{ offer.interest_rate }}% {{ offer.get_interest_type_display }}</td></tr>
+      <tr><th>Monthly Payment</th><td><strong>{{ monthly_payment }} ISK</strong></td></tr>
+      <tr><th>Total (with interest)</th><td><strong>{{ total_amount }} ISK</strong></td></tr>
+    </table>
+  </div>
+  <div class="col-md-6">
+    <h3>Insurance</h3>
+    {% if offer.insurance_enabled %}
+    <table class="table">
+      <tr><th>Premium</th><td>{{ insurance_premium }} ISK (one-time)</td></tr>
+      <tr><th>Coverage</th><td>{{ insurance_coverage_display }}</td></tr>
+    </table>
+    <p class="text-muted small">
+      If the ship is destroyed and you have insurance, the insurance payout
+      settles your remaining balance. Without insurance, you still owe the
+      full remaining balance per the finance agreement.
+    </p>
+    {% else %}
+    <p class="text-muted">Insurance not offered for this finance.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if offer.terms_text %}
+<div class="alert alert-warning">
+  <strong>Terms &amp; Conditions (Fine Print):</strong><br>
+  {{ offer.terms_text|linebreaks }}
+</div>
+{% endif %}
+
+<form method="post">
+  {% csrf_token %}
+  {% if offer.insurance_enabled %}
+  <div class="mb-3 form-check">
+    <input type="checkbox" name="buy_insurance" class="form-check-input" id="ins">
+    <label class="form-check-label" for="ins">
+      Purchase insurance ({{ insurance_premium }} ISK)
+    </label>
+  </div>
+  {% endif %}
+
+  <div class="mb-3 form-check">
+    <input type="checkbox" name="acknowledge" class="form-check-input" id="ack" required>
+    <label class="form-check-label" for="ack">
+      I acknowledge the terms above. I will receive the ship up front and pay
+      {{ monthly_payment }} ISK/month for {{ offer.term_months }} months.
+      If the ship is destroyed, I still owe the remaining balance unless I
+      purchased insurance. No refunds.
+    </label>
+  </div>
+
+  <button type="submit" class="btn btn-success">Accept Finance</button>
+  <a href="{% url 'shipfinance:browse' %}" class="btn btn-secondary">Cancel</a>
+</form>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "shipfinance/base.html" %}
+{% load i18n %}
+{% block shipfinance_content %}
+<h1>My Finances</h1>
+<table class="table table-striped">
+  <thead>
+    <tr><th>Ship</th><th>Principal</th><th>Monthly</th><th>Paid</th><th>Remaining</th><th>Insurance</th><th>Status</th></tr>
+  </thead>
+  <tbody>
+    {% for f in finances %}
+    <tr>
+      <td>{{ f.ship_stock.doctrine_fit.name }}</td>
+      <td>{{ f.principal }} ISK</td>
+      <td>{{ f.monthly_payment }} ISK</td>
+      <td>{{ f.installments_paid }}/{{ f.installments_total }}</td>
+      <td>{{ f.remaining_balance }} ISK</td>
+      <td>{% if f.insurance_purchased %}Yes{% else %}No{% endif %}</td>
+      <td><span class="badge bg-{% if f.status == 'active' %}primary{% elif f.status == 'paid_off' %}success{% elif f.status == 'defaulted' %}danger{% else %}secondary{% endif %}">{{ f.get_status_display }}</span></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% for f in finances %}
+{% if f.status == 'active' %}
+<details class="mb-3">
+  <summary>Installment schedule for {{ f.ship_stock.doctrine_fit.name }}</summary>
+  <table class="table table-sm">
+    <thead><tr><th>#</th><th>Amount</th><th>Due</th><th>Paid</th><th>Invoice Ref</th></tr></thead>
+    <tbody>
+      {% for inst in f.installments.all %}
+      <tr>
+        <td>{{ inst.installment_number }}</td>
+        <td>{{ inst.amount }} ISK</td>
+        <td>{{ inst.due_date|date:"Y-m-d" }}</td>
+        <td>{% if inst.is_paid %}<span class="badge bg-success">Paid</span>{% else %}<span class="badge bg-warning">Unpaid</span>{% endif %}</td>
+        <td>{{ inst.invoice.invoice_ref|default:"-" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endif %}
+{% endfor %}
+{% endblock %}

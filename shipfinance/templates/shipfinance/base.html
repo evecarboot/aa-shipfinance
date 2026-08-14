@@ -1,0 +1,16 @@
+{% extends "allianceauth/base.html" %}
+{% load i18n %}
+{% block page_title %}{{ app_name|default:"Ship Finance" }}{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  {% if messages %}
+  {% for message in messages %}
+  <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">
+    {{ message }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endfor %}
+  {% endif %}
+  {% block shipfinance_content %}{% endblock %}
+</div>
+{% endblock %}

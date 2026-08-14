@@ -1,0 +1,33 @@
+{% extends "shipfinance/base.html" %}
+{% block shipfinance_content %}
+<h1>Mark Ship Destroyed</h1>
+<div class="alert alert-warning">Marking a ship as destroyed will close the agreement and apply the insurance policy (if any).</div>
+<form method="post">
+  {% csrf_token %}
+  <div class="mb-3">
+    <label class="form-label">Killmail URL (optional, for audit log)</label>
+    <input type="text" name="killmail_url" class="form-control" placeholder="https://zkillboard.com/kill/12345/">
+  </div>
+  {% if finance and finance.insurance_purchased %}
+  <div class="alert alert-info">
+    Insurance is active. Coverage: {{ finance.insurance_coverage_amount }} ISK.
+    Remaining balance: {{ finance.remaining_balance }} ISK.
+    {% if finance.insurance_coverage_amount >= finance.remaining_balance %}
+    Insurance will fully settle the remaining balance.
+    {% else %}
+    Insurance will partially cover the balance; member still owes the difference.
+    {% endif %}
+  </div>
+  {% elif finance %}
+  <div class="alert alert-danger">
+    No insurance purchased. Member still owes the remaining balance of {{ finance.remaining_balance }} ISK.
+  </div>
+  {% endif %}
+  <button type="submit" class="btn btn-warning">Confirm Destroyed</button>
+  {% if finance %}
+  <a href="{% url 'shipfinance:admin_finances' %}" class="btn btn-secondary">Cancel</a>
+  {% else %}
+  <a href="{% url 'shipfinance:admin_rentals' %}" class="btn btn-secondary">Cancel</a>
+  {% endif %}
+</form>
+{% endblock %}

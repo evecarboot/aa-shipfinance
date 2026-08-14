@@ -1,0 +1,31 @@
+{% extends "shipfinance/base.html" %}
+{% block shipfinance_content %}
+<h1>Rental Agreements</h1>
+<table class="table table-striped">
+  <thead><tr><th>ID</th><th>Ship</th><th>Member</th><th>Mode</th><th>Start</th><th>Due</th><th>Status</th><th>Actions</th></tr></thead>
+  <tbody>
+    {% for r in rentals %}
+    <tr>
+      <td>{{ r.id }}</td>
+      <td>{{ r.ship_stock.doctrine_fit.name }}</td>
+      <td>{{ r.member.username }}</td>
+      <td>{{ r.get_delivery_mode_display }}</td>
+      <td>{{ r.start_time|date:"Y-m-d" }}</td>
+      <td>{{ r.due_date|date:"Y-m-d" }}</td>
+      <td><span class="badge bg-{% if r.status == 'overdue' %}danger{% elif r.status == 'active' %}primary{% elif r.status == 'returned' %}success{% else %}secondary{% endif %}">{{ r.get_status_display }}</span></td>
+      <td>
+        {% if r.status == 'active' or r.status == 'overdue' %}
+        <form method="post" action="{% url 'shipfinance:admin_mark_returned' r.id %}" class="d-inline">
+          {% csrf_token %}<button class="btn btn-sm btn-outline-success">Returned</button>
+        </form>
+        <a href="{% url 'shipfinance:admin_mark_destroyed_rental' r.id %}" class="btn btn-sm btn-outline-warning">Destroyed</a>
+        <form method="post" action="{% url 'shipfinance:admin_mark_lost_rental' r.id %}" class="d-inline" onsubmit="return confirm('Mark as lost/unaccounted?')">
+          {% csrf_token %}<button class="btn btn-sm btn-outline-danger">Lost</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

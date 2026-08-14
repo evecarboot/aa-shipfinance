@@ -1,0 +1,66 @@
+[build-system]
+build-backend = "flit_core.buildapi"
+requires = ["flit-core>=3.2,<4"]
+
+[project]
+name = "aa-shipfinance"
+readme = "README.md"
+keywords = ["allianceauth", "eveonline", "ship", "finance", "rental"]
+license = { file = "LICENSE" }
+authors = [{ name = "aa-shipfinance contributors" }]
+requires-python = ">=3.8"
+classifiers = [
+    "Environment :: Web Environment",
+    "Framework :: Celery",
+    "Framework :: Django",
+    "Framework :: Django :: 4.0",
+    "Framework :: Django :: 4.2",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+]
+dynamic = ["description", "version"]
+dependencies = [
+    "allianceauth>=3",
+    "allianceauth-corptools>=2.5.5",
+    "allianceauth-invoices>=0.1.9",
+]
+
+[project.urls]
+Home = "https://github.com/your-org/aa-shipfinance"
+Source = "https://github.com/your-org/aa-shipfinance"
+Tracker = "https://github.com/your-org/aa-shipfinance/issues"
+
+[tool.flit.module]
+name = "shipfinance"
+
+[tool.isort]
+profile = "django"
+sections = [
+    "FUTURE",
+    "STDLIB",
+    "THIRDPARTY",
+    "DJANGO",
+    "ALLIANCEAUTH",
+    "FIRSTPARTY",
+    "LOCALFOLDER",
+]
+known_allianceauth = ["allianceauth", "esi"]
+known_django = ["django"]
+skip_gitignore = true
+
+[tool.flake8]
+exclude = [".git", "*migrations*", ".tox", "dist", "htmlcov"]
+max-line-length = 119
+select = ["C", "E", "F", "W", "B", "B950"]
+ignore = ["E203", "E231", "E501", "W503", "W291", "W293"]
