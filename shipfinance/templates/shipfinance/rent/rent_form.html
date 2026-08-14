@@ -1,63 +1,66 @@
 {% extends "shipfinance/base.html" %}
 {% load i18n %}
-{% block shipfinance_content %}
-<h1>Rent: {{ fit.name }}</h1>
-<p class="text-muted">{{ fit.hull_type_name }} - {{ fit.skill_tier }} - {{ available_count }} available</p>
+{% block content %}
+<div class="container py-4">
+  {% include "shipfinance/partials/messages.html" %}
+  <h1 class="mb-4"><i class="fas fa-rocket me-2"></i>{% trans "Rent:" %} {{ fit.name }}</h1>
+  <p class="text-secondary">{{ fit.hull_type_name }} - {{ fit.skill_tier }} - {{ available_count }} available</p>
 
-{% if fit.description %}
-<div class="alert alert-info">{{ fit.description }}</div>
-{% endif %}
+  {% if fit.description %}
+  <div class="alert alert-info">{{ fit.description }}</div>
+  {% endif %}
 
-{% if fit.free_use_rate > 0 %}
-<div class="alert alert-success">
-  <strong>Free-use available!</strong>
-  This ship is also in a free-use hangar. Just take one from the hangar in-game
-  and you'll be billed {{ fit.free_use_rate|floatformat:2 }} ISK per {{ fit.free_use_billing_period }}
-  for the time you use it. No form needed — return it to any corp hangar to stop billing.
+  {% if fit.free_use_rate > 0 %}
+  <div class="alert alert-success">
+    <strong>{% trans "Free-use available!" %}</strong>
+    {% blocktrans with rate=fit.free_use_rate period=fit.free_use_billing_period %}
+    This ship is also in a free-use hangar. Just take one from the hangar in-game
+    and you'll be billed {{ rate }} ISK per {{ period }} for the time you use it.
+    No form needed — return it to any corp hangar to stop billing.
+    {% endblocktrans %}
+  </div>
+  {% endif %}
+
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <form method="post">
+        {% csrf_token %}
+        <div class="mb-3">
+          <label class="form-label">{% trans "Delivery Mode" %}</label>
+          <select name="delivery_mode" class="form-select">
+            <option value="contract">{% trans "Contract to member" %}</option>
+            <option value="hangar_request">{% trans "Hangar access (request)" %}</option>
+          </select>
+          <small class="text-secondary">
+            {% trans "Free-use hangar rentals are automatic — just take a ship from the free-use hangar." %}
+          </small>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">{% trans "Billing Period" %}</label>
+          <select name="billing_period" class="form-select">
+            {% for value, rate in rental_options %}
+            <option value="{{ value }}">{{ value|title }} — {{ rate|floatformat:0 }} ISK</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">{% trans "Duration (hours)" %}</label>
+          <input type="number" name="duration_hours" class="form-control" value="24" min="1">
+        </div>
+
+        <div class="mb-3 form-check">
+          <input type="checkbox" name="acknowledge" class="form-check-input" id="ack" required>
+          <label class="form-check-label" for="ack">
+            {% trans "I acknowledge the terms: I will return this ship to the corp hangar by the due date. No refunds. The ship is tracked by ESI asset ID. If destroyed, the rental closes." %}
+          </label>
+        </div>
+
+        <button type="submit" class="btn btn-primary">{% trans "Rent Ship" %}</button>
+        <a href="{% url 'shipfinance:browse' %}" class="btn btn-outline-secondary">{% trans "Cancel" %}</a>
+      </form>
+    </div>
+  </div>
 </div>
-{% endif %}
-
-<form method="post">
-  {% csrf_token %}
-  <div class="mb-3">
-    <label class="form-label">Delivery Mode</label>
-    <select name="delivery_mode" class="form-select">
-      <option value="contract">Contract to member</option>
-      <option value="hangar_request">Hangar access (request)</option>
-    </select>
-    <small class="form-text text-muted">
-      Free-use hangar rentals are automatic — just take a ship from the free-use hangar.
-    </small>
-  </div>
-
-  <div class="mb-3">
-    <label class="form-label">Billing Period</label>
-    <select name="billing_period" class="form-select">
-      {% for value, label in billing_periods %}
-      <option value="{{ value }}" {% if value == default_billing_period %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-  </div>
-
-  <div class="mb-3">
-    <label class="form-label">Duration (hours)</label>
-    <input type="number" name="duration_hours" class="form-control" value="24" min="1">
-  </div>
-
-  <div class="mb-3">
-    <label class="form-label">Rate (ISK per billing period)</label>
-    <input type="number" name="rate" class="form-control" value="10000000" min="1" step="0.01">
-  </div>
-
-  <div class="mb-3 form-check">
-    <input type="checkbox" name="acknowledge" class="form-check-input" id="ack" required>
-    <label class="form-check-label" for="ack">
-      I acknowledge the terms: I will return this ship to the corp hangar by the due date.
-      No refunds. The ship is tracked by ESI asset ID. If destroyed, the rental closes.
-    </label>
-  </div>
-
-  <button type="submit" class="btn btn-primary">Rent Ship</button>
-  <a href="{% url 'shipfinance:browse' %}" class="btn btn-secondary">Cancel</a>
-</form>
 {% endblock %}

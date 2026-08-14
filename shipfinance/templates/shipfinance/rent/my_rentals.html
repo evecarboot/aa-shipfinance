@@ -1,27 +1,36 @@
 {% extends "shipfinance/base.html" %}
 {% load i18n %}
-{% block shipfinance_content %}
-<h1>My Rentals</h1>
-<table class="table table-striped">
-  <thead>
-    <tr><th>Ship</th><th>Start</th><th>Due</th><th>Mode</th><th>Fee</th><th>Status</th><th>Invoice</th></tr>
-  </thead>
-  <tbody>
-    {% for r in rentals %}
-    <tr>
-      <td>{{ r.ship_stock.doctrine_fit.name }}</td>
-      <td>{{ r.start_time|date:"Y-m-d H:i" }}</td>
-      <td>{{ r.due_date|date:"Y-m-d H:i" }}</td>
-      <td>{{ r.get_delivery_mode_display }}</td>
-      <td>{{ r.rate }} ISK/{{ r.get_billing_period_display }}</td>
-      <td><span class="badge bg-{% if r.status == 'overdue' %}danger{% elif r.status == 'active' %}primary{% elif r.status == 'returned' %}success{% else %}secondary{% endif %}">{{ r.get_status_display }}</span></td>
-      <td>
-        {% if r.invoice %}
-          {{ r.invoice.invoice_ref }} {% if r.invoice.paid %}<span class="badge bg-success">Paid</span>{% else %}<span class="badge bg-warning">Unpaid</span>{% endif %}
-        {% else %}-{% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+{% block content %}
+<div class="container py-4">
+  {% include "shipfinance/partials/messages.html" %}
+  <h1 class="mb-4">{% trans "My Rentals" %}</h1>
+  <div class="card shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead>
+            <tr><th>{% trans "Ship" %}</th><th>{% trans "Start" %}</th><th>{% trans "Due" %}</th><th>{% trans "Mode" %}</th><th>{% trans "Fee" %}</th><th>{% trans "Status" %}</th><th>{% trans "Invoice" %}</th></tr>
+          </thead>
+          <tbody>
+            {% for r in rentals %}
+            <tr>
+              <td>{{ r.ship_stock.doctrine_fit.name }}</td>
+              <td>{{ r.start_time|date:"Y-m-d H:i" }}</td>
+              <td>{{ r.due_date|date:"Y-m-d H:i"|default:"-" }}</td>
+              <td>{{ r.get_delivery_mode_display }}</td>
+              <td>{{ r.rate }} ISK/{{ r.get_billing_period_display }}</td>
+              <td><span class="badge bg-{% if r.status == 'overdue' %}danger{% elif r.status == 'active' %}primary{% elif r.status == 'returned' %}success{% else %}secondary{% endif %}">{{ r.get_status_display }}</span></td>
+              <td>
+                {% if r.invoice %}
+                  {{ r.invoice.invoice_ref }} {% if r.invoice.paid %}<span class="badge bg-success">Paid</span>{% else %}<span class="badge bg-warning">Unpaid</span>{% endif %}
+                {% else %}-{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}

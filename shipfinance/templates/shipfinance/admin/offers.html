@@ -1,25 +1,37 @@
 {% extends "shipfinance/base.html" %}
-{% block shipfinance_content %}
-<h1>Finance Offers</h1>
-<a href="{% url 'shipfinance:admin_offer_new' %}" class="btn btn-primary mb-3">New Offer</a>
-<table class="table table-striped">
-  <thead><tr><th>Name</th><th>Fit</th><th>Principal</th><th>Term</th><th>Interest</th><th>Insurance</th><th>Active</th><th></th></tr></thead>
-  <tbody>
-    {% for o in offers %}
-    <tr>
-      <td>{{ o.name }}</td><td>{{ o.doctrine_fit.name }}</td>
-      <td>{{ o.principal }} ISK</td><td>{{ o.term_months }}mo</td>
-      <td>{{ o.interest_rate }}% {{ o.get_interest_type_display }}</td>
-      <td>{% if o.insurance_enabled %}Yes{% else %}No{% endif %}</td>
-      <td>{% if o.active %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-secondary">No</span>{% endif %}</td>
-      <td>
-        <a href="{% url 'shipfinance:admin_offer_edit' o.id %}" class="btn btn-sm btn-outline-secondary">Edit</a>
-        <form method="post" action="{% url 'shipfinance:admin_offer_delete' o.id %}" class="d-inline" onsubmit="return confirm('Delete {{ o.name }}?')">
-          {% csrf_token %}<button class="btn btn-sm btn-outline-danger">Delete</button>
-        </form>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+{% load i18n %}
+{% block content %}
+<div class="container py-4">
+  {% include "shipfinance/partials/messages.html" %}
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="mb-0"><i class="fas fa-file-invoice-dollar me-2"></i>{% trans "Finance Offers" %}</h1>
+    <a href="{% url 'shipfinance:admin_offer_new' %}" class="btn btn-primary"><i class="fas fa-plus me-1"></i>{% trans "New Offer" %}</a>
+  </div>
+  <div class="card shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead><tr><th>{% trans "Name" %}</th><th>{% trans "Fit" %}</th><th>{% trans "Principal" %}</th><th>{% trans "Term" %}</th><th>{% trans "Interest" %}</th><th>{% trans "Insurance" %}</th><th>{% trans "Active" %}</th><th></th></tr></thead>
+          <tbody>
+            {% for o in offers %}
+            <tr>
+              <td>{{ o.name }}</td><td>{{ o.doctrine_fit.name }}</td>
+              <td>{{ o.principal }} ISK</td><td>{{ o.term_months }}mo</td>
+              <td>{{ o.interest_rate }}% {{ o.get_interest_type_display }}</td>
+              <td>{% if o.insurance_enabled %}Yes{% else %}No{% endif %}</td>
+              <td>{% if o.active %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-secondary">No</span>{% endif %}</td>
+              <td>
+                <a href="{% url 'shipfinance:admin_offer_edit' o.id %}" class="btn btn-sm btn-outline-primary">{% trans "Edit" %}</a>
+                <form method="post" action="{% url 'shipfinance:admin_offer_delete' o.id %}" class="d-inline" onsubmit="return confirm('Delete {{ o.name }}?')">
+                  {% csrf_token %}<button class="btn btn-sm btn-outline-danger">{% trans "Delete" %}</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}

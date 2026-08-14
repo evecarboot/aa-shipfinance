@@ -1,49 +1,57 @@
 {% extends "shipfinance/base.html" %}
-{% block shipfinance_content %}
-<h1>{% if offer %}Edit Offer{% else %}New Offer{% endif %}</h1>
-<form method="post">
-  {% csrf_token %}
-  <div class="mb-3">
-    <label class="form-label">Doctrine Fit</label>
-    <select name="doctrine_fit" class="form-select" required>
-      {% for fit in fits %}
-      <option value="{{ fit.id }}" {% if offer and offer.doctrine_fit_id == fit.id %}selected{% endif %}>{{ fit.name }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <div class="mb-3"><label class="form-label">Offer Name</label><input type="text" name="name" class="form-control" value="{{ offer.name|default:'' }}" required placeholder="e.g. Gila Finance - 3 month"></div>
-  <div class="mb-3"><label class="form-label">Principal (ISK)</label><input type="number" name="principal" class="form-control" value="{{ offer.principal|default:'' }}" required step="0.01"></div>
-  <div class="mb-3"><label class="form-label">Term (months)</label><input type="number" name="term_months" class="form-control" value="{{ offer.term_months|default:3 }}" min="1"></div>
-  <div class="mb-3">
-    <label class="form-label">Interest Type</label>
-    <select name="interest_type" class="form-select">
-      {% for value, label in interest_types %}
-      <option value="{{ value }}" {% if offer and offer.interest_type == value %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <div class="mb-3"><label class="form-label">Interest Rate (%)</label><input type="number" name="interest_rate" class="form-control" value="{{ offer.interest_rate|default:10 }}" step="0.01"></div>
+{% load i18n %}
+{% block content %}
+<div class="container py-4">
+  {% include "shipfinance/partials/messages.html" %}
+  <h1 class="mb-4">{% if offer %}{% trans "Edit Offer" %}{% else %}{% trans "New Offer" %}{% endif %}</h1>
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <form method="post">
+        {% csrf_token %}
+        <div class="mb-3">
+          <label class="form-label">{% trans "Doctrine Fit" %}</label>
+          <select name="doctrine_fit" class="form-select" required>
+            {% for fit in fits %}
+            <option value="{{ fit.id }}" {% if offer and offer.doctrine_fit_id == fit.id %}selected{% endif %}>{{ fit.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3"><label class="form-label">{% trans "Offer Name" %}</label><input type="text" name="name" class="form-control" value="{{ offer.name|default:'' }}" required placeholder="e.g. Gila Finance - 3 month"></div>
+        <div class="mb-3"><label class="form-label">{% trans "Principal (ISK)" %}</label><input type="number" name="principal" class="form-control" value="{{ offer.principal|default:'' }}" required step="0.01"></div>
+        <div class="mb-3"><label class="form-label">{% trans "Term (months)" %}</label><input type="number" name="term_months" class="form-control" value="{{ offer.term_months|default:3 }}" min="1"></div>
+        <div class="mb-3">
+          <label class="form-label">{% trans "Interest Type" %}</label>
+          <select name="interest_type" class="form-select">
+            {% for value, label in interest_types %}
+            <option value="{{ value }}" {% if offer and offer.interest_type == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3"><label class="form-label">{% trans "Interest Rate (%)" %}</label><input type="number" name="interest_rate" class="form-control" value="{{ offer.interest_rate|default:10 }}" step="0.01"></div>
 
-  <h4>Insurance</h4>
-  <div class="mb-3 form-check">
-    <input type="checkbox" name="insurance_enabled" class="form-check-input" id="ins_en" {% if not offer or offer.insurance_enabled %}checked{% endif %}>
-    <label class="form-check-label" for="ins_en">Insurance Enabled</label>
-  </div>
-  <div class="mb-3"><label class="form-label">Insurance Premium Rate (% of principal)</label><input type="number" name="insurance_premium_rate" class="form-control" value="{{ offer.insurance_premium_rate|default:5 }}" step="0.01"></div>
-  <div class="mb-3">
-    <label class="form-label">Insurance Coverage</label>
-    <select name="insurance_coverage" class="form-select">
-      {% for value, label in coverage_choices %}
-      <option value="{{ value }}" {% if offer and offer.insurance_coverage == value %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <div class="mb-3"><label class="form-label">Insurance Flat Amount (ISK, only if coverage=FLAT_AMOUNT)</label><input type="number" name="insurance_flat_amount" class="form-control" value="{{ offer.insurance_flat_amount|default:0 }}" step="0.01"></div>
+        <h4>{% trans "Insurance" %}</h4>
+        <div class="mb-3 form-check">
+          <input type="checkbox" name="insurance_enabled" class="form-check-input" id="ins_en" {% if not offer or offer.insurance_enabled %}checked{% endif %}>
+          <label class="form-check-label" for="ins_en">{% trans "Insurance Enabled" %}</label>
+        </div>
+        <div class="mb-3"><label class="form-label">{% trans "Insurance Premium Rate (% of principal)" %}</label><input type="number" name="insurance_premium_rate" class="form-control" value="{{ offer.insurance_premium_rate|default:5 }}" step="0.01"></div>
+        <div class="mb-3">
+          <label class="form-label">{% trans "Insurance Coverage" %}</label>
+          <select name="insurance_coverage" class="form-select">
+            {% for value, label in coverage_choices %}
+            <option value="{{ value }}" {% if offer and offer.insurance_coverage == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3"><label class="form-label">{% trans "Insurance Flat Amount (ISK, only if coverage=flat_amount)" %}</label><input type="number" name="insurance_flat_amount" class="form-control" value="{{ offer.insurance_flat_amount|default:0 }}" step="0.01"></div>
 
-  <div class="mb-3"><label class="form-label">Terms Text (Fine Print)</label><textarea name="terms_text" class="form-control" rows="4">{{ offer.terms_text|default:'' }}</textarea></div>
-  <div class="mb-3 form-check"><input type="checkbox" name="active" class="form-check-input" id="active" {% if not offer or offer.active %}checked{% endif %}><label class="form-check-label" for="active">Active</label></div>
+        <div class="mb-3"><label class="form-label">{% trans "Terms Text (Fine Print)" %}</label><textarea name="terms_text" class="form-control" rows="4">{{ offer.terms_text|default:'' }}</textarea></div>
+        <div class="mb-3 form-check"><input type="checkbox" name="active" class="form-check-input" id="active" {% if not offer or offer.active %}checked{% endif %}><label class="form-check-label" for="active">{% trans "Active" %}</label></div>
 
-  <button type="submit" class="btn btn-primary">Save</button>
-  <a href="{% url 'shipfinance:admin_offers' %}" class="btn btn-secondary">Cancel</a>
-</form>
+        <button type="submit" class="btn btn-primary">{% trans "Save" %}</button>
+        <a href="{% url 'shipfinance:admin_offers' %}" class="btn btn-outline-secondary">{% trans "Cancel" %}</a>
+      </form>
+    </div>
+  </div>
+</div>
 {% endblock %}

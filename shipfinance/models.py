@@ -151,6 +151,19 @@ class DoctrineFit(models.Model):
     description = models.TextField(blank=True, default="")
     active = models.BooleanField(default=True)
 
+    # Rental pricing for contract/hangar_request rentals.
+    # Admin sets the rate per billing period; members just pick duration.
+    # Set any rate to 0 to disable that billing period for this fit.
+    rent_rate_hourly = models.DecimalField(
+        max_digits=20, decimal_places=2, default=Decimal("0"),
+        help_text="ISK per hour for contract/hangar rentals. 0 = hourly not offered.")
+    rent_rate_daily = models.DecimalField(
+        max_digits=20, decimal_places=2, default=Decimal("0"),
+        help_text="ISK per day for contract/hangar rentals. 0 = daily not offered.")
+    rent_rate_weekly = models.DecimalField(
+        max_digits=20, decimal_places=2, default=Decimal("0"),
+        help_text="ISK per week for contract/hangar rentals. 0 = weekly not offered.")
+
     # Free-use hangar pricing. When a ship is taken from a free-use hangar,
     # the plugin auto-creates a rental and bills at this rate per period.
     # Set rate to 0 to disable free-use for this fit.
@@ -182,6 +195,18 @@ class DoctrineFit(models.Model):
     @property
     def available_stock_count(self):
         return self.stock.filter(state=ShipStockState.AVAILABLE).count()
+
+    @property
+    def rental_options(self):
+        """Return list of (billing_period, rate) tuples with non-zero rates."""
+        options = []
+        if self.rent_rate_hourly > 0:
+            options.append((BillingPeriod.HOURLY, self.rent_rate_hourly))
+        if self.rent_rate_daily > 0:
+            options.append((BillingPeriod.DAILY, self.rent_rate_daily))
+        if self.rent_rate_weekly > 0:
+            options.append((BillingPeriod.WEEKLY, self.rent_rate_weekly))
+        return options
 
 
 class FreeUseHangar(models.Model):

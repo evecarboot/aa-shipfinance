@@ -71,7 +71,10 @@ def browse_ships(request):
 @login_required
 @permission_required("shipfinance.use_rent")
 def rent_ship(request, fit_id):
-    """Rent a ship: member picks a fit, chooses period, acknowledges terms.
+    """Rent a ship: member picks duration, acknowledges terms.
+
+    Rates are set by the admin on the doctrine fit. The member just picks
+    a billing period (from the ones the admin has priced) and a duration.
 
     This is for contract/hangar_request rentals only. Free-use rentals
     are auto-detected by the detect_free_use_taken task when a member
@@ -89,9 +92,15 @@ def rent_ship(request, fit_id):
         messages.error(request, "The invoices plugin is required for rentals.")
         return redirect("shipfinance:browse")
 
+    # Get the rental options the admin has configured for this fit
+    rental_options = fit.rental_options
+    if not rental_options:
+        messages.error(request, f"No rental rates configured for {fit.name}. Ask an admin.")
+        return redirect("shipfinance:browse")
+
     if request.method == "POST":
         delivery_mode = request.POST.get("delivery_mode", DeliveryMode.CONTRACT)
-        billing_period = request.POST.get("billing_period", app_settings.SHIPFINANCE_DEFAULT_BILLING_PERIOD)
+        billing_period = request.POST.get("billing_period")
         acknowledge = request.POST.get("acknowledge") == "on"
 
         # Free-use is auto-detected, not a form choice
@@ -103,15 +112,20 @@ def rent_ship(request, fit_id):
             messages.error(request, "You must acknowledge the terms to rent.")
             return redirect("shipfinance:rent_ship", fit_id=fit.id)
 
-        try:
-            duration_hours = int(request.POST.get("duration_hours", 24))
-            rate = Decimal(request.POST.get("rate", "0"))
-        except (ValueError, InvalidOperation):
-            messages.error(request, "Invalid duration or rate value.")
+        # Look up the rate from the admin-configured options
+        rate = None
+        for bp, r in rental_options:
+            if bp == billing_period:
+                rate = r
+                break
+        if rate is None:
+            messages.error(request, "Invalid billing period for this fit.")
             return redirect("shipfinance:rent_ship", fit_id=fit.id)
 
-        if rate <= 0:
-            messages.error(request, "Rate must be greater than zero.")
+        try:
+            duration_hours = int(request.POST.get("duration_hours", 24))
+        except ValueError:
+            messages.error(request, "Invalid duration value.")
             return redirect("shipfinance:rent_ship", fit_id=fit.id)
 
         if duration_hours <= 0:
@@ -123,7 +137,7 @@ def rent_ship(request, fit_id):
         now = timezone.now()
         due = now + timedelta(hours=duration_hours)
 
-        # Compute rental fee
+        # Compute rental fee from admin-set rate
         duration = due - now
         fee = helpers.compute_rental_fee(rate, billing_period, duration)
 
@@ -179,13 +193,11 @@ def rent_ship(request, fit_id):
             f"Pay invoice ref: {invoice.invoice_ref if invoice else 'N/A'}")
         return redirect("shipfinance:my_rentals")
 
-    # GET: show rental form
+    # GET: show rental form with admin-configured rates
     ctx = {
         "fit": fit,
         "available_count": available_stock.count(),
-        "delivery_modes": DeliveryMode.CHOICES,
-        "billing_periods": BillingPeriod.CHOICES,
-        "default_billing_period": app_settings.SHIPFINANCE_DEFAULT_BILLING_PERIOD,
+        "rental_options": rental_options,
     }
     return render(request, "shipfinance/rent/rent_form.html", ctx)
 
@@ -360,8 +372,11 @@ def admin_fit_edit(request, fit_id=None):
         try:
             hull_type_id = int(request.POST.get("hull_type_id", 0))
             free_use_rate = Decimal(request.POST.get("free_use_rate", "0"))
+            rent_rate_hourly = Decimal(request.POST.get("rent_rate_hourly", "0"))
+            rent_rate_daily = Decimal(request.POST.get("rent_rate_daily", "0"))
+            rent_rate_weekly = Decimal(request.POST.get("rent_rate_weekly", "0"))
         except (ValueError, InvalidOperation):
-            messages.error(request, "Hull type ID and free-use rate must be numbers.")
+            messages.error(request, "Hull type ID and rate fields must be numbers.")
             return redirect(request.path)
 
         if not name or not hull_type_id:
@@ -378,13 +393,18 @@ def admin_fit_edit(request, fit_id=None):
             fit.active = active
             fit.free_use_rate = free_use_rate
             fit.free_use_billing_period = free_use_billing_period
+            fit.rent_rate_hourly = rent_rate_hourly
+            fit.rent_rate_daily = rent_rate_daily
+            fit.rent_rate_weekly = rent_rate_weekly
             fit.save()
             messages.success(request, f"Updated fit: {fit.name}")
         else:
             fit = DoctrineFit.objects.create(
                 name=name, hull_type_id=hull_type_id, hull_type_name=hull_type_name,
                 dna=dna, skill_tier=skill_tier, description=description, active=active,
-                free_use_rate=free_use_rate, free_use_billing_period=free_use_billing_period)
+                free_use_rate=free_use_rate, free_use_billing_period=free_use_billing_period,
+                rent_rate_hourly=rent_rate_hourly, rent_rate_daily=rent_rate_daily,
+                rent_rate_weekly=rent_rate_weekly)
             messages.success(request, f"Created fit: {fit.name}")
         return redirect("shipfinance:admin_fits")
 

@@ -1,30 +1,38 @@
 {% extends "shipfinance/base.html" %}
-{% block shipfinance_content %}
-<h1>{% if stock %}Edit Stock{% else %}Register Ship{% endif %}</h1>
-<form method="post">
-  {% csrf_token %}
-  <div class="mb-3">
-    <label class="form-label">Doctrine Fit</label>
-    <select name="doctrine_fit" class="form-select" required>
-      {% for fit in fits %}
-      <option value="{{ fit.id }}" {% if stock and stock.doctrine_fit_id == fit.id %}selected{% endif %}>{{ fit.name }}</option>
-      {% endfor %}
-    </select>
+{% load i18n %}
+{% block content %}
+<div class="container py-4">
+  {% include "shipfinance/partials/messages.html" %}
+  <h1 class="mb-4">{% if stock %}{% trans "Edit Stock" %}{% else %}{% trans "Register Ship" %}{% endif %}</h1>
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <form method="post">
+        {% csrf_token %}
+        <div class="mb-3">
+          <label class="form-label">{% trans "Doctrine Fit" %}</label>
+          <select name="doctrine_fit" class="form-select" required>
+            {% for fit in fits %}
+            <option value="{{ fit.id }}" {% if stock and stock.doctrine_fit_id == fit.id %}selected{% endif %}>{{ fit.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mb-3"><label class="form-label">{% trans "ESI Item ID" %}</label><input type="text" name="item_id" class="form-control" value="{{ stock.item_id|default:'' }}" required placeholder="The assembled ship's asset item_id from ESI"></div>
+        <div class="mb-3"><label class="form-label">{% trans "Ship Name (display only)" %}</label><input type="text" name="item_name" class="form-control" value="{{ stock.item_name|default:'' }}"></div>
+        <div class="mb-3"><label class="form-label">{% trans "Location ID" %}</label><input type="number" name="location_id" class="form-control" value="{{ stock.location_id|default:'' }}" required></div>
+        <div class="mb-3"><label class="form-label">{% trans "Location Name" %}</label><input type="text" name="location_name" class="form-control" value="{{ stock.location_name|default:'' }}"></div>
+        <div class="mb-3"><label class="form-label">{% trans "Hangar Division (1-7)" %}</label><input type="number" name="hangar_division" class="form-control" value="{{ stock.hangar_division|default:1 }}" min="1" max="7"></div>
+        <div class="mb-3">
+          <label class="form-label">{% trans "State" %}</label>
+          <select name="state" class="form-select">
+            {% for value, label in states %}
+            <option value="{{ value }}" {% if stock and stock.state == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary">{% trans "Save" %}</button>
+        <a href="{% url 'shipfinance:admin_stock' %}" class="btn btn-outline-secondary">{% trans "Cancel" %}</a>
+      </form>
+    </div>
   </div>
-  <div class="mb-3"><label class="form-label">ESI Item ID</label><input type="text" name="item_id" class="form-control" value="{{ stock.item_id|default:'' }}" required placeholder="The assembled ship's asset item_id from ESI"></div>
-  <div class="mb-3"><label class="form-label">Ship Name (display only)</label><input type="text" name="item_name" class="form-control" value="{{ stock.item_name|default:'' }}"></div>
-  <div class="mb-3"><label class="form-label">Location ID</label><input type="number" name="location_id" class="form-control" value="{{ stock.location_id|default:'' }}" required></div>
-  <div class="mb-3"><label class="form-label">Location Name</label><input type="text" name="location_name" class="form-control" value="{{ stock.location_name|default:'' }}"></div>
-  <div class="mb-3"><label class="form-label">Hangar Division (1-7)</label><input type="number" name="hangar_division" class="form-control" value="{{ stock.hangar_division|default:1 }}" min="1" max="7"></div>
-  <div class="mb-3">
-    <label class="form-label">State</label>
-    <select name="state" class="form-select">
-      {% for value, label in states %}
-      <option value="{{ value }}" {% if stock and stock.state == value %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <button type="submit" class="btn btn-primary">Save</button>
-  <a href="{% url 'shipfinance:admin_stock' %}" class="btn btn-secondary">Cancel</a>
-</form>
+</div>
 {% endblock %}

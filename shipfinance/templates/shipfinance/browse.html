@@ -1,55 +1,77 @@
 {% extends "shipfinance/base.html" %}
 {% load i18n %}
-{% block shipfinance_content %}
-<h1>Browse Ships</h1>
+{% block content %}
+<div class="container py-4">
+  {% include "shipfinance/partials/messages.html" %}
+  <h1 class="mb-4"><i class="fas fa-ship me-2"></i>{% trans "Browse Ships" %}</h1>
 
-<h3>Rentable Ships</h3>
-<table class="table table-striped">
-  <thead>
-    <tr><th>Fit</th><th>Hull</th><th>Skill Tier</th><th>Available</th><th></th></tr>
-  </thead>
-  <tbody>
-    {% for fit in fits %}
-    <tr>
-      <td>{{ fit.name }}</td>
-      <td>{{ fit.hull_type_name }}</td>
-      <td>{{ fit.skill_tier|default:"-" }}</td>
-      <td>{{ fit.available_stock_count }}</td>
-      <td>
-        {% if can_rent and fit.available_stock_count > 0 %}
-        <a href="{% url 'shipfinance:rent_ship' fit.id %}" class="btn btn-primary btn-sm">Rent</a>
-        {% else %}
-        <span class="text-muted">No stock</span>
-        {% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+  <div class="card shadow-sm mb-4">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead>
+            <tr><th>{% trans "Fit" %}</th><th>{% trans "Hull" %}</th><th>{% trans "Skill Tier" %}</th><th>{% trans "Available" %}</th><th>{% trans "Rental Rates" %}</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for fit in fits %}
+            <tr>
+              <td>{{ fit.name }}</td>
+              <td>{{ fit.hull_type_name }}</td>
+              <td>{{ fit.skill_tier|default:"-" }}</td>
+              <td>{{ fit.available_stock_count }}</td>
+              <td>
+                {% for value, rate in fit.rental_options %}
+                <span class="badge bg-secondary me-1">{{ value|title }}: {{ rate|floatformat:0 }}</span>
+                {% endfor %}
+                {% if fit.free_use_rate > 0 %}
+                <span class="badge bg-success">Free-use: {{ fit.free_use_rate|floatformat:0 }}/{{ fit.free_use_billing_period }}</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if can_rent and fit.available_stock_count > 0 %}
+                <a href="{% url 'shipfinance:rent_ship' fit.id %}" class="btn btn-primary btn-sm">{% trans "Rent" %}</a>
+                {% else %}
+                <span class="text-secondary">{% trans "No stock" %}</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 
-<h3>Finance Offers</h3>
-<table class="table table-striped">
-  <thead>
-    <tr><th>Offer</th><th>Hull</th><th>Principal</th><th>Term</th><th>Interest</th><th>Insurance</th><th></th></tr>
-  </thead>
-  <tbody>
-    {% for offer in offers %}
-    <tr>
-      <td>{{ offer.name }}</td>
-      <td>{{ offer.doctrine_fit.name }}</td>
-      <td>{{ offer.principal }} ISK</td>
-      <td>{{ offer.term_months }} months</td>
-      <td>{{ offer.interest_rate }}% {{ offer.get_interest_type_display }}</td>
-      <td>{% if offer.insurance_enabled %}Yes{% else %}No{% endif %}</td>
-      <td>
-        {% if can_finance and offer.doctrine_fit.available_stock_count > 0 %}
-        <a href="{% url 'shipfinance:finance_ship' offer.id %}" class="btn btn-success btn-sm">Finance</a>
-        {% else %}
-        <span class="text-muted">No stock</span>
-        {% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+  <h3 class="mb-3">{% trans "Finance Offers" %}</h3>
+  <div class="card shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead>
+            <tr><th>{% trans "Offer" %}</th><th>{% trans "Hull" %}</th><th>{% trans "Principal" %}</th><th>{% trans "Term" %}</th><th>{% trans "Interest" %}</th><th>{% trans "Insurance" %}</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for offer in offers %}
+            <tr>
+              <td>{{ offer.name }}</td>
+              <td>{{ offer.doctrine_fit.name }}</td>
+              <td>{{ offer.principal }} ISK</td>
+              <td>{{ offer.term_months }} months</td>
+              <td>{{ offer.interest_rate }}% {{ offer.get_interest_type_display }}</td>
+              <td>{% if offer.insurance_enabled %}Yes{% else %}No{% endif %}</td>
+              <td>
+                {% if can_finance and offer.doctrine_fit.available_stock_count > 0 %}
+                <a href="{% url 'shipfinance:finance_ship' offer.id %}" class="btn btn-success btn-sm">{% trans "Finance" %}</a>
+                {% else %}
+                <span class="text-secondary">{% trans "No stock" %}</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}

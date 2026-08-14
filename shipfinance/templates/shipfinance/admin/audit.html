@@ -1,18 +1,28 @@
 {% extends "shipfinance/base.html" %}
-{% block shipfinance_content %}
-<h1>Audit Log</h1>
-<table class="table table-sm table-striped">
-  <thead><tr><th>Time</th><th>Action</th><th>By</th><th>Ship</th><th>Detail</th></tr></thead>
-  <tbody>
-    {% for e in entries %}
-    <tr>
-      <td>{{ e.created_at|date:"Y-m-d H:i" }}</td>
-      <td><code>{{ e.action }}</code></td>
-      <td>{{ e.performed_by.username|default:"system" }}</td>
-      <td>{{ e.ship_stock|default:"-" }}</td>
-      <td>{{ e.detail }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+{% load i18n %}
+{% block content %}
+<div class="container py-4">
+  {% include "shipfinance/partials/messages.html" %}
+  <h1 class="mb-4"><i class="fas fa-clipboard-list me-2"></i>{% trans "Audit Log" %}</h1>
+  <div class="card shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+          <thead><tr><th>{% trans "Time" %}</th><th>{% trans "Action" %}</th><th>{% trans "By" %}</th><th>{% trans "Ship" %}</th><th>{% trans "Detail" %}</th></tr></thead>
+          <tbody>
+            {% for e in entries %}
+            <tr>
+              <td>{{ e.created_at|date:"Y-m-d H:i" }}</td>
+              <td><code>{{ e.action }}</code></td>
+              <td>{{ e.performed_by.username|default:"system" }}</td>
+              <td>{{ e.ship_stock|default:"-" }}</td>
+              <td>{{ e.detail }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}

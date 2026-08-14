@@ -1,71 +1,74 @@
 {% extends "shipfinance/base.html" %}
 {% load i18n %}
-{% block shipfinance_content %}
-<h1><i class="fas fa-cog"></i> Admin Dashboard</h1>
+{% block content %}
+<div class="container py-4">
+  {% include "shipfinance/partials/messages.html" %}
+  <h1 class="mb-4"><i class="fas fa-cog me-2"></i>{% trans "Admin Dashboard" %}</h1>
 
-<div class="row mb-4">
-  <div class="col-md-3">
-    <div class="card text-bg-primary">
-      <div class="card-body">
-        <h5 class="card-title">Doctrine Fits</h5>
-        <p class="card-text display-6">{{ fits_count }}</p>
-        <a href="{% url 'shipfinance:admin_fits' %}" class="btn btn-light btn-sm">Manage</a>
+  <div class="row mb-4">
+    <div class="col-md-3">
+      <div class="card text-bg-primary shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title">{% trans "Doctrine Fits" %}</h5>
+          <p class="card-text display-6">{{ fits_count }}</p>
+          <a href="{% url 'shipfinance:admin_fits' %}" class="btn btn-light btn-sm">{% trans "Manage" %}</a>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-bg-success shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title">{% trans "Ship Stock" %}</h5>
+          <p class="card-text display-6">{{ stock_count }}</p>
+          <small>{{ available_count }} available</small><br>
+          <a href="{% url 'shipfinance:admin_stock' %}" class="btn btn-light btn-sm">{% trans "Manage" %}</a>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-bg-warning shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title">{% trans "Active Rentals" %}</h5>
+          <p class="card-text display-6">{{ active_rentals }}</p>
+          <small>{{ overdue_rentals }} overdue</small><br>
+          <a href="{% url 'shipfinance:admin_rentals' %}" class="btn btn-light btn-sm">{% trans "View" %}</a>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-bg-info shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title">{% trans "Active Finances" %}</h5>
+          <p class="card-text display-6">{{ active_finances }}</p>
+          <small>{{ offers_count }} offers</small><br>
+          <a href="{% url 'shipfinance:admin_finances' %}" class="btn btn-light btn-sm">{% trans "View" %}</a>
+        </div>
       </div>
     </div>
   </div>
-  <div class="col-md-3">
-    <div class="card text-bg-success">
-      <div class="card-body">
-        <h5 class="card-title">Ship Stock</h5>
-        <p class="card-text display-6">{{ stock_count }}</p>
-        <small>{{ available_count }} available</small><br>
-        <a href="{% url 'shipfinance:admin_stock' %}" class="btn btn-light btn-sm">Manage</a>
-      </div>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="card text-bg-warning">
-      <div class="card-body">
-        <h5 class="card-title">Active Rentals</h5>
-        <p class="card-text display-6">{{ active_rentals }}</p>
-        <small>{{ overdue_rentals }} overdue</small><br>
-        <a href="{% url 'shipfinance:admin_rentals' %}" class="btn btn-light btn-sm">View</a>
-      </div>
-    </div>
-  </div>
-  <div class="col-md-3">
-    <div class="card text-bg-info">
-      <div class="card-body">
-        <h5 class="card-title">Active Finances</h5>
-        <p class="card-text display-6">{{ active_finances }}</p>
-        <small>{{ offers_count }} offers</small><br>
-        <a href="{% url 'shipfinance:admin_finances' %}" class="btn btn-light btn-sm">View</a>
-      </div>
-    </div>
-  </div>
-</div>
 
-<div class="row mb-3">
-  <div class="col">
-    <h3>Integrations</h3>
-    <ul class="list-group">
-      <li class="list-group-item d-flex justify-content-between">
-        Invoices plugin <span class="badge bg-{% if invoices_available %}success{% else %}danger{% endif %}">{% if invoices_available %}Installed{% else %}Missing{% endif %}</span>
-      </li>
-      <li class="list-group-item d-flex justify-content-between">
-        GeorgeForge <span class="badge bg-{% if georgeforge_available %}success{% else %}secondary{% endif %}">{% if georgeforge_available %}Installed{% else %}Not installed (optional){% endif %}</span>
-      </li>
-    </ul>
+  <div class="row mb-3">
+    <div class="col">
+      <h3>{% trans "Integrations" %}</h3>
+      <ul class="list-group">
+        <li class="list-group-item d-flex justify-content-between">
+          {% trans "Invoices plugin" %} <span class="badge bg-{% if invoices_available %}success{% else %}danger{% endif %}">{% if invoices_available %}{% trans "Installed" %}{% else %}{% trans "Missing" %}{% endif %}</span>
+        </li>
+        <li class="list-group-item d-flex justify-content-between">
+          GeorgeForge <span class="badge bg-{% if georgeforge_available %}success{% else %}secondary{% endif %}">{% if georgeforge_available %}{% trans "Installed" %}{% else %}{% trans "Not installed (optional)" %}{% endif %}</span>
+        </li>
+      </ul>
+    </div>
   </div>
-</div>
 
-<div class="row">
-  <div class="col">
-    <h3>Quick Actions</h3>
-    <a href="{% url 'shipfinance:admin_hangars' %}" class="btn btn-outline-secondary btn-sm">Free-Use Hangars</a>
-    <a href="{% url 'shipfinance:admin_offers' %}" class="btn btn-outline-secondary btn-sm">Finance Offers</a>
-    <a href="{% url 'shipfinance:admin_audit' %}" class="btn btn-outline-secondary btn-sm">Audit Log</a>
-    <a href="{% url 'shipfinance:admin_setup_tasks' %}" class="btn btn-outline-warning btn-sm">Setup Periodic Tasks</a>
+  <div class="row">
+    <div class="col">
+      <h3>{% trans "Quick Actions" %}</h3>
+      <a href="{% url 'shipfinance:admin_hangars' %}" class="btn btn-outline-secondary btn-sm">{% trans "Free-Use Hangars" %}</a>
+      <a href="{% url 'shipfinance:admin_offers' %}" class="btn btn-outline-secondary btn-sm">{% trans "Finance Offers" %}</a>
+      <a href="{% url 'shipfinance:admin_audit' %}" class="btn btn-outline-secondary btn-sm">{% trans "Audit Log" %}</a>
+      <a href="{% url 'shipfinance:admin_setup_tasks' %}" class="btn btn-outline-warning btn-sm">{% trans "Setup Periodic Tasks" %}</a>
+    </div>
   </div>
 </div>
 {% endblock %}

@@ -1,23 +1,43 @@
 {% extends "shipfinance/base.html" %}
-{% block shipfinance_content %}
-<h1>Doctrine Fits</h1>
-<a href="{% url 'shipfinance:admin_fit_new' %}" class="btn btn-primary mb-3">New Fit</a>
-<table class="table table-striped">
-  <thead><tr><th>Name</th><th>Hull</th><th>Skill Tier</th><th>Stock</th><th>Active</th><th></th></tr></thead>
-  <tbody>
-    {% for fit in fits %}
-    <tr>
-      <td>{{ fit.name }}</td><td>{{ fit.hull_type_name }}</td><td>{{ fit.skill_tier|default:"-" }}</td>
-      <td>{{ fit.available_stock_count }}</td>
-      <td>{% if fit.active %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-secondary">No</span>{% endif %}</td>
-      <td>
-        <a href="{% url 'shipfinance:admin_fit_edit' fit.id %}" class="btn btn-sm btn-outline-secondary">Edit</a>
-        <form method="post" action="{% url 'shipfinance:admin_fit_delete' fit.id %}" class="d-inline" onsubmit="return confirm('Delete {{ fit.name }}?')">
-          {% csrf_token %}<button class="btn btn-sm btn-outline-danger">Delete</button>
-        </form>
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+{% load i18n %}
+{% block content %}
+<div class="container py-4">
+  {% include "shipfinance/partials/messages.html" %}
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="mb-0"><i class="fas fa-cog me-2"></i>{% trans "Doctrine Fits" %}</h1>
+    <a href="{% url 'shipfinance:admin_fit_new' %}" class="btn btn-primary"><i class="fas fa-plus me-1"></i>{% trans "New Fit" %}</a>
+  </div>
+  <div class="card shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead><tr><th>{% trans "Name" %}</th><th>{% trans "Hull" %}</th><th>{% trans "Skill Tier" %}</th><th>{% trans "Stock" %}</th><th>{% trans "Rental Rates" %}</th><th>{% trans "Free-Use" %}</th><th>{% trans "Active" %}</th><th></th></tr></thead>
+          <tbody>
+            {% for fit in fits %}
+            <tr>
+              <td>{{ fit.name }}</td>
+              <td>{{ fit.hull_type_name }}</td>
+              <td>{{ fit.skill_tier|default:"-" }}</td>
+              <td>{{ fit.available_stock_count }}</td>
+              <td>
+                {% for value, rate in fit.rental_options %}
+                <span class="badge bg-secondary me-1">{{ value|title }}: {{ rate|floatformat:0 }}</span>
+                {% endfor %}
+              </td>
+              <td>{% if fit.free_use_rate > 0 %}{{ fit.free_use_rate|floatformat:0 }}/{{ fit.free_use_billing_period }}{% else %}-{% endif %}</td>
+              <td>{% if fit.active %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-secondary">No</span>{% endif %}</td>
+              <td>
+                <a href="{% url 'shipfinance:admin_fit_edit' fit.id %}" class="btn btn-sm btn-outline-primary">{% trans "Edit" %}</a>
+                <form method="post" action="{% url 'shipfinance:admin_fit_delete' fit.id %}" class="d-inline" onsubmit="return confirm('Delete {{ fit.name }}?')">
+                  {% csrf_token %}<button class="btn btn-sm btn-outline-danger">{% trans "Delete" %}</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}

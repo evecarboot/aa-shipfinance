@@ -1,36 +1,46 @@
 {% extends "shipfinance/base.html" %}
-{% block shipfinance_content %}
-<h1>Finance Agreements</h1>
-<table class="table table-striped">
-  <thead><tr><th>ID</th><th>Ship</th><th>Member</th><th>Principal</th><th>Monthly</th><th>Paid</th><th>Remaining</th><th>Insured</th><th>Status</th><th>Actions</th></tr></thead>
-  <tbody>
-    {% for f in finances %}
-    <tr>
-      <td>{{ f.id }}</td>
-      <td>{{ f.ship_stock.doctrine_fit.name }}</td>
-      <td>{{ f.member.username }}</td>
-      <td>{{ f.principal }} ISK</td>
-      <td>{{ f.monthly_payment }} ISK</td>
-      <td>{{ f.installments_paid }}/{{ f.installments_total }}</td>
-      <td>{{ f.remaining_balance }} ISK</td>
-      <td>{% if f.insurance_purchased %}Yes{% else %}No{% endif %}</td>
-      <td><span class="badge bg-{% if f.status == 'active' %}primary{% elif f.status == 'paid_off' %}success{% elif f.status == 'defaulted' %}danger{% else %}secondary{% endif %}">{{ f.get_status_display }}</span></td>
-      <td>
-        {% if f.status == 'active' %}
-        <form method="post" action="{% url 'shipfinance:admin_mark_paid_off' f.id %}" class="d-inline" onsubmit="return confirm('Mark as paid off?')">
-          {% csrf_token %}<button class="btn btn-sm btn-outline-success">Paid Off</button>
-        </form>
-        <a href="{% url 'shipfinance:admin_mark_destroyed_finance' f.id %}" class="btn btn-sm btn-outline-warning">Destroyed</a>
-        <form method="post" action="{% url 'shipfinance:admin_mark_lost_finance' f.id %}" class="d-inline" onsubmit="return confirm('Mark as lost/unaccounted?')">
-          {% csrf_token %}<button class="btn btn-sm btn-outline-danger">Lost</button>
-        </form>
-        <form method="post" action="{% url 'shipfinance:admin_mark_defaulted' f.id %}" class="d-inline" onsubmit="return confirm('Mark as defaulted?')">
-          {% csrf_token %}<button class="btn btn-sm btn-outline-danger">Defaulted</button>
-        </form>
-        {% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+{% load i18n %}
+{% block content %}
+<div class="container py-4">
+  {% include "shipfinance/partials/messages.html" %}
+  <h1 class="mb-4"><i class="fas fa-coins me-2"></i>{% trans "Finance Agreements" %}</h1>
+  <div class="card shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead><tr><th>ID</th><th>{% trans "Ship" %}</th><th>{% trans "Member" %}</th><th>{% trans "Principal" %}</th><th>{% trans "Monthly" %}</th><th>{% trans "Paid" %}</th><th>{% trans "Remaining" %}</th><th>{% trans "Insured" %}</th><th>{% trans "Status" %}</th><th>{% trans "Actions" %}</th></tr></thead>
+          <tbody>
+            {% for f in finances %}
+            <tr>
+              <td>{{ f.id }}</td>
+              <td>{{ f.ship_stock.doctrine_fit.name }}</td>
+              <td>{{ f.member.username }}</td>
+              <td>{{ f.principal }} ISK</td>
+              <td>{{ f.monthly_payment }} ISK</td>
+              <td>{{ f.installments_paid }}/{{ f.installments_total }}</td>
+              <td>{{ f.remaining_balance }} ISK</td>
+              <td>{% if f.insurance_purchased %}Yes{% else %}No{% endif %}</td>
+              <td><span class="badge bg-{% if f.status == 'active' %}primary{% elif f.status == 'paid_off' %}success{% elif f.status == 'defaulted' %}danger{% else %}secondary{% endif %}">{{ f.get_status_display }}</span></td>
+              <td>
+                {% if f.status == 'active' %}
+                <form method="post" action="{% url 'shipfinance:admin_mark_paid_off' f.id %}" class="d-inline" onsubmit="return confirm('Mark as paid off?')">
+                  {% csrf_token %}<button class="btn btn-sm btn-outline-success">{% trans "Paid Off" %}</button>
+                </form>
+                <a href="{% url 'shipfinance:admin_mark_destroyed_finance' f.id %}" class="btn btn-sm btn-outline-warning">{% trans "Destroyed" %}</a>
+                <form method="post" action="{% url 'shipfinance:admin_mark_lost_finance' f.id %}" class="d-inline" onsubmit="return confirm('Mark as lost/unaccounted?')">
+                  {% csrf_token %}<button class="btn btn-sm btn-outline-danger">{% trans "Lost" %}</button>
+                </form>
+                <form method="post" action="{% url 'shipfinance:admin_mark_defaulted' f.id %}" class="d-inline" onsubmit="return confirm('Mark as defaulted?')">
+                  {% csrf_token %}<button class="btn btn-sm btn-outline-danger">{% trans "Defaulted" %}</button>
+                </form>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
