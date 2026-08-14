@@ -9,7 +9,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from . import app_settings, helpers
-from .georgeforge_integration import create_delivery_contract
+from . import georgeforge_integration
 from .models import (
     BillingPeriod,
     DeliveryMode,
@@ -49,6 +49,7 @@ def index(request):
         "can_rent": request.user.has_perm("shipfinance.use_rent"),
         "can_finance": request.user.has_perm("shipfinance.use_finance"),
         "can_manage": request.user.has_perm("shipfinance.manage_shipfinance"),
+        "georgeforge_available": app_settings.georgeforge_installed(),
     }
     return render(request, "shipfinance/index.html", ctx)
 
@@ -105,7 +106,7 @@ def rent_ship(request, fit_id):
 
         # Free-use is auto-detected, not a form choice
         if delivery_mode == DeliveryMode.FREE_USE:
-            messages.error(request, "Free-use rentals are automatic — just take a ship from the free-use hangar.")
+            messages.error(request, "Self-service rentals are automatic — just take a ship from the rental hangar.")
             return redirect("shipfinance:rent_ship", fit_id=fit.id)
 
         if not acknowledge:
@@ -181,10 +182,6 @@ def rent_ship(request, fit_id):
             "RENTAL_CREATED", performed_by=request.user,
             rental_agreement=rental, ship_stock=stock,
             detail=f"Rental {rental.id} created for {fit.name}")
-
-        # Try GeorgeForge delivery if applicable
-        if delivery_mode == DeliveryMode.CONTRACT and app_settings.georgeforge_installed():
-            create_delivery_contract(stock, char, note=f"Rental {rental.id}")
 
         messages.success(
             request,
@@ -279,10 +276,6 @@ def finance_ship(request, offer_id):
             detail=f"Finance {fa.id} created for {offer.doctrine_fit.name}, "
                    f"{offer.term_months} months, insurance={buy_insurance}")
 
-        # Try GeorgeForge delivery
-        if app_settings.georgeforge_installed():
-            create_delivery_contract(stock, char, note=f"Finance {fa.id}")
-
         messages.success(
             request,
             f"Finance agreement created! Ship: {offer.doctrine_fit.name}. "
@@ -316,8 +309,158 @@ def my_rentals(request):
 def my_finances(request):
     """List the member's finance agreements."""
     finances = FinanceAgreement.objects.visible_to(request.user).order_by("-created_at")
-    ctx = {"finances": finances}
+    ctx = {
+        "finances": finances,
+        "georgeforge_available": app_settings.georgeforge_installed(),
+    }
     return render(request, "shipfinance/finance/my_finances.html", ctx)
+
+
+# ---------------------------------------------------------------------------
+# GeorgeForge installment plans: split a GeorgeForge deposit into monthly payments
+# ---------------------------------------------------------------------------
+
+@login_required
+@permission_required("shipfinance.access_shipfinance")
+def georgeforge_orders(request):
+    """List the member's GeorgeForge orders that can be split into installments."""
+    if not app_settings.georgeforge_installed():
+        messages.error(request, "GeorgeForge is not installed.")
+        return redirect("shipfinance:index")
+
+    orders = georgeforge_integration.get_member_orders(request.user)
+    ctx = {"orders": orders}
+    return render(request, "shipfinance/finance/georgeforge_orders.html", ctx)
+
+
+@login_required
+@permission_required("shipfinance.access_shipfinance")
+def finance_georgeforge_deposit(request, order_id):
+    """Split a GeorgeForge order's full cost into monthly installments.
+
+    The member picks a term (months) and acknowledges terms. This plugin
+    creates a FinanceAgreement for the full order total (including any
+    deposit), cancels the original GF deposit invoice, and creates
+    installment invoices. When all installments are paid, the GF order
+    is marked as DEPOSIT_RECIEVED so it proceeds to building.
+    """
+    if not app_settings.georgeforge_installed():
+        messages.error(request, "GeorgeForge is not installed.")
+        return redirect("shipfinance:index")
+
+    if not app_settings.invoices_installed():
+        messages.error(request, "The invoices plugin is required for financing.")
+        return redirect("shipfinance:georgeforge_orders")
+
+    order = georgeforge_integration.get_order(order_id)
+    if order is None:
+        messages.error(request, "GeorgeForge order not found.")
+        return redirect("shipfinance:georgeforge_orders")
+
+    if order.user_id != request.user.id:
+        messages.error(request, "You can only finance your own orders.")
+        return redirect("shipfinance:georgeforge_orders")
+
+    if order.status != 20:  # AWAITING_DEPOSIT
+        messages.error(request, "This order is not available for installments.")
+        return redirect("shipfinance:georgeforge_orders")
+
+    # Check if already financed
+    existing = FinanceAgreement.objects.filter(
+        georgeforge_order_id=order_id).exclude(
+        status=FinanceStatus.DEFAULTED).first()
+    if existing:
+        messages.error(request, f"This order already has an installment plan (Finance #{existing.id}).")
+        return redirect("shipfinance:my_finances")
+
+    # Finance the FULL order cost, not just the deposit
+    order_total = order.totalcost
+    deposit_total = order.deposit * order.quantity
+
+    # Get available finance terms
+    offers = FinanceOffer.objects.filter(active=True).order_by("term_months")
+    if not offers.exists():
+        messages.error(request, "No finance offers configured. Ask an admin.")
+        return redirect("shipfinance:georgeforge_orders")
+
+    if request.method == "POST":
+        offer_id = request.POST.get("offer_id")
+        acknowledge = request.POST.get("acknowledge") == "on"
+
+        if not acknowledge:
+            messages.error(request, "You must acknowledge the terms to finance.")
+            return redirect(request.path)
+
+        offer = get_object_or_404(FinanceOffer, pk=offer_id, active=True)
+
+        char = _get_main_character(request.user)
+        if char is None:
+            messages.error(request, "You need a main character set to finance.")
+            return redirect(request.path)
+
+        # Calculate finance terms for the full order cost
+        total = helpers.compute_finance_total(
+            order_total, offer.interest_rate, offer.interest_type, offer.term_months)
+        monthly = helpers.compute_monthly_payment(total, offer.term_months)
+
+        now = timezone.now()
+
+        # Create the finance agreement (no ship_stock — ship comes from GF)
+        fa = FinanceAgreement.objects.create(
+            finance_offer=offer,
+            ship_stock=None,
+            member=request.user,
+            member_character=char,
+            georgeforge_order_id=order_id,
+            georgeforge_item_name=order.eve_type.name if order.eve_type else f"GF Order #{order_id}",
+            principal=order_total,
+            term_months=offer.term_months,
+            interest_type=offer.interest_type,
+            interest_rate=offer.interest_rate,
+            total_amount=total,
+            monthly_payment=monthly,
+            insurance_purchased=False,
+            status=FinanceStatus.ACTIVE,
+            terms_acknowledged=True,
+            terms_text=(
+                f"Installment plan for GeorgeForge order #{order_id} "
+                f"({order.eve_type.name if order.eve_type else 'Unknown'} x{order.quantity}). "
+                f"Full order cost: {order_total} ISK (includes deposit of {deposit_total} ISK) "
+                f"split over {offer.term_months} months. "
+                f"Monthly: {monthly} ISK. Total with interest: {total} ISK. "
+                f"The ship will be built once this installment plan is fully paid off. "
+                f"You receive the ship from GeorgeForge when it's delivered."
+            ),
+            acknowledged_at=now,
+        )
+
+        # Build installment schedule
+        helpers.build_installment_schedule(fa)
+
+        # Cancel the original GF deposit invoice since we're handling full payment
+        georgeforge_integration.cancel_georgeforge_invoice(order_id)
+
+        helpers.log_action(
+            "GF_INSTALLMENT_CREATED", performed_by=request.user,
+            finance_agreement=fa,
+            detail=f"Installment plan {fa.id} created for GF order #{order_id}, "
+                   f"full cost {order_total} ISK over {offer.term_months} months")
+
+        messages.success(
+            request,
+            f"Installment plan created! Full cost: {order_total} ISK over {offer.term_months} months. "
+            f"Monthly: {monthly} ISK. Total with interest: {total} ISK. "
+            f"Pay your installments and the ship will be built once fully paid off.")
+        return redirect("shipfinance:my_finances")
+
+    # GET: show finance form
+    ctx = {
+        "order": order,
+        "order_total": order_total,
+        "deposit_total": deposit_total,
+        "offers": offers,
+    }
+    return render(request, "shipfinance/finance/georgeforge_finance_form.html", ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -510,35 +653,45 @@ def admin_hangars(request):
 def admin_hangar_edit(request, hangar_id=None):
     hangar = get_object_or_404(FreeUseHangar, pk=hangar_id) if hangar_id else None
     if request.method == "POST":
-        location_name = request.POST.get("location_name", "")
         active = request.POST.get("active") == "on"
+        require_return_to_origin = request.POST.get("require_return_to_origin") == "on"
 
         try:
-            location_id = int(request.POST.get("location_id", 0))
             hangar_division = int(request.POST.get("hangar_division", 1))
         except ValueError:
-            messages.error(request, "Location ID and hangar division must be numbers.")
-            return redirect(request.path)
-
-        if not location_id:
-            messages.error(request, "Location ID is required.")
+            messages.error(request, "Hangar division must be a number.")
             return redirect(request.path)
 
         if hangar_division < 1 or hangar_division > 7:
             messages.error(request, "Hangar division must be 1-7.")
             return redirect(request.path)
 
+        ship_name_prefix = request.POST.get("ship_name_prefix", ".BANR").strip()
+        if not ship_name_prefix:
+            messages.error(request, "Ship name prefix is required.")
+            return redirect(request.path)
+
+        # Check for duplicate division (excluding current hangar)
+        existing = FreeUseHangar.objects.filter(hangar_division=hangar_division)
         if hangar:
-            hangar.location_id = location_id
-            hangar.location_name = location_name
+            existing = existing.exclude(pk=hangar.pk)
+        if existing.exists():
+            messages.error(request, f"Division {hangar_division} is already a rental hangar.")
+            return redirect(request.path)
+
+        if hangar:
             hangar.hangar_division = hangar_division
+            hangar.ship_name_prefix = ship_name_prefix
+            hangar.require_return_to_origin = require_return_to_origin
             hangar.active = active
             hangar.save()
             messages.success(request, f"Updated hangar: {hangar}")
         else:
             hangar = FreeUseHangar.objects.create(
-                location_id=location_id, location_name=location_name,
-                hangar_division=hangar_division, active=active)
+                hangar_division=hangar_division,
+                ship_name_prefix=ship_name_prefix,
+                require_return_to_origin=require_return_to_origin,
+                active=active)
             messages.success(request, f"Created hangar: {hangar}")
         return redirect("shipfinance:admin_hangars")
 

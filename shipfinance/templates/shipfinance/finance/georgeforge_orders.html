@@ -1,0 +1,48 @@
+{% extends "shipfinance/base.html" %}
+{% load i18n %}
+{% block content %}
+<div class="container py-4">
+  {% include "shipfinance/partials/messages.html" %}
+  <h1 class="mb-4"><i class="fas fa-industry me-2"></i>{% trans "GeorgeForge Installment Plans" %}</h1>
+  <p class="text-secondary mb-4">
+    {% trans "Split the full cost of your GeorgeForge ship orders into monthly payments. The ship gets built once you've paid it off completely." %}
+  </p>
+
+  {% if orders %}
+  <div class="card shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead>
+            <tr><th>{% trans "Order #" %}</th><th>{% trans "Item" %}</th><th>{% trans "Qty" %}</th><th>{% trans "Total Cost" %}</th><th>{% trans "Includes Deposit" %}</th><th>{% trans "Status" %}</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for order in orders %}
+            <tr>
+              <td>#{{ order.id }}</td>
+              <td>{{ order.type_name }}</td>
+              <td>{{ order.quantity }}</td>
+              <td>{{ order.totalcost|floatformat:0 }} ISK</td>
+              <td>{{ order.deposit|floatformat:0 }} ISK</td>
+              <td><span class="badge bg-warning">{{ order.status_display }}</span></td>
+              <td>
+                <a href="{% url 'shipfinance:finance_georgeforge_deposit' order.id %}" class="btn btn-primary btn-sm">
+                  <i class="fas fa-coins me-1"></i>{% trans "Pay in Installments" %}
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-info">
+    {% trans "No GeorgeForge orders available for installment plans. Place an order in GeorgeForge first, then come back here to split the cost into monthly payments." %}
+  </div>
+  {% endif %}
+
+  <a href="{% url 'shipfinance:index' %}" class="btn btn-outline-secondary mt-3">{% trans "Back" %}</a>
+</div>
+{% endblock %}

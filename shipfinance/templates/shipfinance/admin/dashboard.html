@@ -55,7 +55,7 @@
           {% trans "Invoices plugin" %} <span class="badge bg-{% if invoices_available %}success{% else %}danger{% endif %}">{% if invoices_available %}{% trans "Installed" %}{% else %}{% trans "Missing" %}{% endif %}</span>
         </li>
         <li class="list-group-item d-flex justify-content-between">
-          GeorgeForge <span class="badge bg-{% if georgeforge_available %}success{% else %}secondary{% endif %}">{% if georgeforge_available %}{% trans "Installed" %}{% else %}{% trans "Not installed (optional)" %}{% endif %}</span>
+          GeorgeForge <span class="badge bg-{% if georgeforge_available %}success{% else %}secondary{% endif %}">{% if georgeforge_available %}{% trans "Installed (installment plans)" %}{% else %}{% trans "Not installed (optional)" %}{% endif %}</span>
         </li>
       </ul>
     </div>

@@ -1,13 +1,32 @@
-"""Optional GeorgeForge integration hook.
+"""Optional GeorgeForge integration — installment plans for full ship price.
 
-Only called when allianceauth-georgeforge is installed. Used to push a
-ship to GeorgeForge's build queue (e.g. when a finance/savings plan completes,
-or to create a contract for ship delivery).
+GeorgeForge is a card builder tool. Admins list ships (ForSale) with a price
+and optional deposit. Members place orders and normally pay upfront.
+
+This plugin adds a **payment installments** option for GeorgeForge orders.
+Instead of paying the full price upfront, a member can split the total order
+cost into monthly installments through this plugin. The GeorgeForge order
+only advances to building once the installments are fully paid off here.
+
+If the order has a deposit, it's just part of the total being financed —
+the member pays everything off in installments, then the ship gets built.
+
+Flow:
+1. Member places an order in GeorgeForge (status = AWAITING_DEPOSIT)
+2. Member comes to this plugin and sees their GeorgeForge orders
+3. Member clicks "Pay in Installments"
+4. This plugin creates a FinanceAgreement for the full order cost, split into
+   monthly installments
+5. Member pays installments via Alliance Auth invoices
+6. When all installments are paid → mark the GeorgeForge order as DEPOSIT_RECIEVED
+   so GeorgeForge proceeds to building
+7. GeorgeForge continues its normal flow (build, delivery)
 
 This module is imported lazily and guarded by app_settings.georgeforge_installed()
 so it never breaks if GeorgeForge is absent.
 """
 import logging
+from decimal import Decimal
 
 from . import app_settings
 
@@ -19,31 +38,105 @@ def is_available():
     return app_settings.georgeforge_installed()
 
 
-def create_delivery_contract(ship_stock, member_character, note=""):
-    """Attempt to create a delivery contract via GeorgeForge.
+def get_member_orders(user):
+    """Get a member's GeorgeForge orders that can be financed via installments.
 
-    Returns True if a contract was created/handed off to GF, False otherwise.
-    Implementations should catch GF-specific exceptions and log them — this
-    must never raise into the calling view.
+    Returns a list of dicts with order info suitable for display:
+    [{id, type_name, quantity, totalcost, deposit, status, status_display}, ...]
+
+    Only returns orders in AWAITING_DEPOSIT status that don't already have
+    a finance agreement from this plugin.
     """
     if not is_available():
-        logger.debug("GeorgeForge not installed; skipping delivery contract")
+        return []
+    try:
+        from georgeforge.models import Order
+        from .models import FinanceAgreement
+
+        # Orders awaiting deposit payment (the start of the GF payment flow)
+        orders = Order.objects.filter(
+            user=user,
+            status=Order.OrderStatus.AWAITING_DEPOSIT,
+        ).select_related("eve_type")
+
+        # Exclude orders that already have a finance agreement
+        financed_order_ids = FinanceAgreement.objects.filter(
+            georgeforge_order_id__isnull=False
+        ).values_list("georgeforge_order_id", flat=True)
+
+        result = []
+        for order in orders:
+            if order.id in financed_order_ids:
+                continue
+            result.append({
+                "id": order.id,
+                "type_name": order.eve_type.name if order.eve_type else "Unknown",
+                "quantity": order.quantity,
+                "totalcost": order.totalcost,
+                "deposit": order.deposit * order.quantity,
+                "status": order.status,
+                "status_display": order.get_status_display(),
+            })
+        return result
+    except Exception as e:
+        logger.error(f"Failed to get GeorgeForge orders for {user}: {e}", exc_info=True)
+        return []
+
+
+def get_order(order_id):
+    """Get a GeorgeForge order by ID. Returns the Order object or None."""
+    if not is_available():
+        return None
+    try:
+        from georgeforge.models import Order
+        return Order.objects.select_related("eve_type", "user").get(pk=order_id)
+    except Exception as e:
+        logger.error(f"Failed to get GeorgeForge order {order_id}: {e}")
+        return None
+
+
+def mark_order_ready_to_build(order_id):
+    """Mark a GeorgeForge order as ready to build (deposit received).
+
+    Called when a FinanceAgreement for this order is fully paid off.
+    Sets the order status to DEPOSIT_RECIEVED so GeorgeForge continues
+    its normal build/delivery flow.
+
+    Returns True on success, False on failure.
+    """
+    if not is_available():
+        logger.warning("GeorgeForge not installed; cannot mark order ready")
         return False
     try:
-        # GeorgeForge's API surface varies by version. This is a stub that
-        # admins/integrators can fill in based on their GF version.
-        # The intent: hand the ship to GF so it creates an in-game contract
-        # from the corp to the member character.
-        # import georgeforge  # noqa
-        # georgeforge.api.create_contract(
-        #     item_id=ship_stock.item_id,
-        #     to_character=member_character,
-        #     note=note,
-        # )
-        logger.warning(
-            "GeorgeForge integration is a stub. Implement create_delivery_contract "
-            "for your GF version. See shipfinance/georgeforge_integration.py.")
-        return False
+        from georgeforge.models import Order
+        order = Order.objects.get(pk=order_id)
+        if order.status != Order.OrderStatus.DEPOSIT_RECIEVED:
+            order.status = Order.OrderStatus.DEPOSIT_RECIEVED
+            order.save()
+            logger.info(
+                f"GeorgeForge order {order_id} marked as DEPOSIT_RECIEVED "
+                f"(installment plan paid off — ready to build)")
+        return True
     except Exception as e:
-        logger.error(f"GeorgeForge delivery contract failed: {e}", exc_info=True)
+        logger.error(
+            f"Failed to mark GeorgeForge order {order_id} as ready to build: {e}",
+            exc_info=True)
+        return False
+
+
+def cancel_georgeforge_invoice(order_id):
+    """Cancel the GeorgeForge deposit invoice for an order.
+
+    When we finance the full order via installments, the original GF deposit
+    invoice should be cancelled since this plugin handles payment.
+    """
+    if not is_available():
+        return False
+    try:
+        from georgeforge.models import Order
+        Order.cancel_invoice(order_id)
+        logger.info(f"Cancelled GeorgeForge deposit invoice for order {order_id}")
+        return True
+    except Exception as e:
+        logger.debug(f"Could not cancel GF invoice for order {order_id}: {e}")
         return False

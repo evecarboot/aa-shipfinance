@@ -260,107 +260,249 @@ def _get_member_has_asset(stock, member):
 
 
 # ---------------------------------------------------------------------------
-# Free-use detection: ship taken from free-use hangar
+# Self-service rental detection: scan hangar by name prefix
 # ---------------------------------------------------------------------------
+
+def _scan_hangar_for_rental_ships(hangar):
+    """Scan a rental division for ships matching the name prefix.
+
+    Scans the designated division at ALL stations (division-based, not
+    location-based). Returns a list of dicts:
+    [{item_id, type_id, name, location_id}, ...]
+    for ships whose name starts with the prefix.
+
+    Uses corptools CorpAsset (which has a 'name' field) if available.
+    Falls back to ESI corp assets + names endpoint.
+    """
+    prefix = hangar.ship_name_prefix
+    expected_flag = "CorpSAG{0}".format(hangar.hangar_division)
+    found = []
+
+    # Try corptools first (has name field cached)
+    if app_settings.corptools_installed():
+        try:
+            from corptools.models import CorpAsset
+            assets = CorpAsset.objects.filter(
+                location_flag=expected_flag,
+                singleton=True,
+            )
+            for asset in assets:
+                name = asset.name or ""
+                if name.startswith(prefix):
+                    found.append({
+                        "item_id": asset.item_id,
+                        "type_id": asset.type_id,
+                        "name": name,
+                        "location_id": asset.location_id,
+                    })
+            if found:
+                return found
+        except Exception as e:
+            logger.error(f"corptools division scan failed for {hangar}: {e}")
+
+    # ESI fallback: get corp assets, then get names for singleton items
+    corp_id = _get_corp_id()
+    client = _esi_client()
+    if not corp_id or not client:
+        return found
+
+    try:
+        assets = client.client.Corporation.get_corporations_corporation_id_assets(
+            corporation_id=corp_id
+        ).results()
+
+        # Filter to ships in this division at any station
+        singleton_item_ids = []
+        division_assets = []
+        for asset in assets:
+            if (asset.get("location_flag") == expected_flag
+                    and asset.get("is_singleton") is True):
+                item_id = int(asset.get("item_id", 0))
+                division_assets.append({
+                    "item_id": item_id,
+                    "type_id": asset.get("type_id"),
+                    "name": "",
+                    "location_id": asset.get("location_id"),
+                })
+                singleton_item_ids.append(item_id)
+
+        if not singleton_item_ids:
+            return found
+
+        # Get names for singleton items
+        # ESI endpoint: POST /corporations/{corp_id}/assets/names/
+        try:
+            names = client.client.Corporation.post_corporations_corporation_id_assets_names(
+                corporation_id=corp_id,
+                item_ids=singleton_item_ids[:1000],  # ESI limit
+            ).results()
+            name_map = {n.get("item_id"): n.get("name", "") for n in names}
+
+            for asset in division_assets:
+                name = name_map.get(asset["item_id"], "")
+                if name.startswith(prefix):
+                    asset["name"] = name
+                    found.append(asset)
+        except Exception as e:
+            logger.debug(f"ESI asset names lookup failed: {e}")
+
+    except Exception as e:
+        logger.error(f"ESI division scan failed for {hangar}: {e}")
+
+    return found
+
+
+def _get_location_name(location_id):
+    """Best-effort lookup of a location name from corptools or ESI."""
+    if app_settings.corptools_installed():
+        try:
+            from corptools.models import EveLocation
+            loc = EveLocation.objects.filter(id=location_id).first()
+            if loc:
+                return loc.name
+        except Exception:
+            pass
+    return ""
+
 
 @shared_task(bind=True, base=QueueOnce)
 def detect_free_use_taken(self):
-    """Detect ships taken from free-use hangars and auto-create rentals.
+    """Scan rental divisions for prefixed ships and detect when they're taken.
 
-    For each available ship whose doctrine fit has a non-zero free_use_rate:
-    - Check if the ship is in a designated FreeUseHangar.
-    - If the ship is no longer in that hangar (but was last time)...
-    - ...and is now in a member's personal assets...
-    - ...auto-create a RentalAgreement with delivery_mode=free_use.
+    Flow:
+    1. For each active rental hangar (division), scan that division at ALL
+       stations for ships whose name starts with the prefix.
+    2. Auto-create ShipStock records for any new prefixed ships found (matched
+       to DoctrineFit by hull type_id). Each ship's actual location is stored.
+    3. For ships that were tracked as AVAILABLE but are no longer in the division:
+       - Find who has the ship (by item_id in member assets)
+       - Auto-create a RentalAgreement, recording the origin station
+    4. Billing happens when the ship is returned (see check_rental_returns).
 
     The member never fills out a form — taking the ship IS the rental.
-    Billing happens when the ship is returned (see check_rental_returns).
     """
-    logger.info("Checking for free-use ships taken")
+    logger.info("Scanning rental divisions for prefixed ships")
 
-    # Get all active free-use hangars
-    free_hangars = FreeUseHangar.objects.filter(active=True)
-    if not free_hangars.exists():
-        return  # No free-use hangars configured
+    hangars = FreeUseHangar.objects.filter(active=True)
+    if not hangars.exists():
+        return
 
-    # Only ships that are available and have a free-use rate set
-    available = ShipStock.objects.filter(
-        state=ShipStockState.AVAILABLE,
-        doctrine_fit__free_use_rate__gt=0,
-        doctrine_fit__active=True,
-    ).select_related("doctrine_fit")
+    # Build a map of hull_type_id -> DoctrineFit for fits with free_use_rate > 0
+    fits_by_hull = {}
+    for fit in DoctrineFit.objects.filter(active=True, free_use_rate__gt=0):
+        fits_by_hull[fit.hull_type_id] = fit
 
-    for stock in available:
-        # Check if this ship is supposed to be in a free-use hangar
-        in_free_hangar = False
-        for hangar in free_hangars:
-            if (stock.location_id == hangar.location_id
-                    and stock.hangar_division == hangar.hangar_division):
-                in_free_hangar = True
-                break
+    for hangar in hangars:
+        # Scan the division at all stations for prefixed ships
+        ships_in_division = _scan_hangar_for_rental_ships(hangar)
+        in_division_item_ids = {s["item_id"] for s in ships_in_division}
 
-        if not in_free_hangar:
-            continue  # This ship is not in a free-use hangar
+        # Auto-create ShipStock for new prefixed ships
+        for ship in ships_in_division:
+            fit = fits_by_hull.get(ship["type_id"])
+            if fit is None:
+                logger.warning(
+                    f"Rental hangar {hangar}: ship '{ship['name']}' (type "
+                    f"{ship['type_id']}) has no matching DoctrineFit with "
+                    "free_use_rate > 0. Skipping.")
+                continue
 
-        # Check if the ship is still in its hangar
-        if _get_corp_assets_for_stock(stock):
-            continue  # Still in the hangar, nobody took it
+            loc_name = _get_location_name(ship["location_id"])
+            stock, created = ShipStock.objects.get_or_create(
+                item_id=ship["item_id"],
+                defaults={
+                    "doctrine_fit": fit,
+                    "item_name": ship["name"],
+                    "location_id": ship["location_id"],
+                    "location_name": loc_name,
+                    "hangar_division": hangar.hangar_division,
+                    "state": ShipStockState.AVAILABLE,
+                },
+            )
+            if created:
+                logger.info(
+                    f"Auto-registered rental ship: {ship['name']} "
+                    f"(item {ship['item_id']}, fit {fit.name})")
+                helpers.log_action(
+                    "RENTAL_SHIP_AUTO_REGISTERED",
+                    ship_stock=stock,
+                    detail=f"Auto-registered '{ship['name']}' in {hangar}")
 
-        # Ship is gone from the free-use hangar — who has it?
-        user, character = _get_member_holding_asset(stock)
-        if user is None:
-            logger.warning(
-                f"Free-use: ship {stock.item_id} left hangar but can't find who took it. "
-                "Admin should investigate.")
-            continue
+        # Check for ships that were AVAILABLE but are no longer in the division
+        tracked_available = ShipStock.objects.filter(
+            state=ShipStockState.AVAILABLE,
+            hangar_division=hangar.hangar_division,
+            doctrine_fit__free_use_rate__gt=0,
+        ).select_related("doctrine_fit")
 
-        # Don't auto-rent to someone without rent permission
-        if not user.has_perm("shipfinance.use_rent"):
-            logger.warning(
-                f"Free-use: {user} took {stock.item_id} but lacks use_rent perm. "
-                "Admin should investigate.")
-            continue
+        for stock in tracked_available:
+            if stock.item_id in in_division_item_ids:
+                continue  # Still in the division
 
-        # Auto-create the rental
-        fit = stock.doctrine_fit
-        now = timezone.now()
-        rental = RentalAgreement.objects.create(
-            ship_stock=stock,
-            member=user,
-            member_character=character,
-            delivery_mode=DeliveryMode.FREE_USE,
-            start_time=now,
-            due_date=None,  # No preset duration — billed for actual time
-            billing_period=fit.free_use_billing_period,
-            rate=fit.free_use_rate,
-            status=RentalStatus.ACTIVE,
-            terms_acknowledged=True,  # Taking the ship = implicit acceptance
-            terms_text=(
-                f"Free-use rental of {fit.name}. Rate: {fit.free_use_rate} ISK "
-                f"per {fit.free_use_billing_period}. Billed for actual time used "
-                f"when the ship is returned to a corp hangar."
-            ),
-            acknowledged_at=now,
-        )
-        stock.state = ShipStockState.OUT_RENT
-        stock.save()
+            # Ship is gone from the rental division — who has it?
+            user, character = _get_member_holding_asset(stock)
+            if user is None:
+                logger.warning(
+                    f"Rental hangar {hangar}: ship {stock.item_id} "
+                    "left but can't find who took it. Admin should investigate.")
+                continue
 
-        helpers.log_action(
-            "FREE_USE_RENTAL_AUTO_CREATED",
-            performed_by=user,
-            rental_agreement=rental, ship_stock=stock,
-            detail=f"Free-use rental {rental.id} auto-created: "
-                   f"{user} took {fit.name} (item {stock.item_id})")
+            # Don't auto-rent to someone without rent permission
+            if not user.has_perm("shipfinance.use_rent"):
+                logger.warning(
+                    f"Rental hangar: {user} took {stock.item_id} but lacks "
+                    "use_rent perm. Admin should investigate.")
+                continue
 
-        helpers.notify_member(
-            user, "Free-Use Rental Started",
-            f"You've taken a {fit.name} from the free-use hangar. "
-            f"You're now renting it at {fit.free_use_rate} ISK per "
-            f"{fit.free_use_billing_period}. Return it to any corp hangar "
-            f"to stop billing.",
-            eve_character=character)
+            # Auto-create the rental, recording where it was rented from
+            fit = stock.doctrine_fit
+            now = timezone.now()
+            return_hint = (
+                "the same station you took it from"
+                if hangar.require_return_to_origin
+                else "any corp hangar"
+            )
+            rental = RentalAgreement.objects.create(
+                ship_stock=stock,
+                member=user,
+                member_character=character,
+                delivery_mode=DeliveryMode.FREE_USE,
+                start_time=now,
+                due_date=None,  # No preset duration — billed for actual time
+                billing_period=fit.free_use_billing_period,
+                rate=fit.free_use_rate,
+                status=RentalStatus.ACTIVE,
+                terms_acknowledged=True,  # Taking the ship = implicit acceptance
+                origin_location_id=stock.location_id,
+                origin_location_name=stock.location_name,
+                terms_text=(
+                    f"Self-service rental of {fit.name} from {hangar}. "
+                    f"Rate: {fit.free_use_rate} ISK per {fit.free_use_billing_period}. "
+                    f"Billed for actual time used when the ship is returned "
+                    f"to {return_hint}."
+                ),
+                acknowledged_at=now,
+            )
+            stock.state = ShipStockState.OUT_RENT
+            stock.save()
 
-        logger.info(f"Free-use rental {rental.id} auto-created for {user}")
+            helpers.log_action(
+                "RENTAL_AUTO_CREATED",
+                performed_by=user,
+                rental_agreement=rental, ship_stock=stock,
+                detail=f"Rental {rental.id} auto-created: "
+                       f"{user} took {fit.name} (item {stock.item_id}) "
+                       f"from {stock.location_name or stock.location_id}")
+
+            helpers.notify_member(
+                user, "Rental Started",
+                f"You've taken a {fit.name} from the rental hangar. "
+                f"You're now renting it at {fit.free_use_rate} ISK per "
+                f"{fit.free_use_billing_period}. Return it to {return_hint} "
+                f"to stop billing.",
+                eve_character=character)
+
+            logger.info(f"Rental {rental.id} auto-created for {user}")
 
 
 # ---------------------------------------------------------------------------
@@ -384,13 +526,28 @@ def check_rental_returns(self):
         stock = rental.ship_stock
 
         if rental.delivery_mode == DeliveryMode.FREE_USE:
-            # Free-use: ship back in ANY corp hangar = returned
-            # (doesn't have to be the original hangar/station)
+            # Self-service: ship back in corp hangar = returned
+            # But if require_return_to_origin is set, it must be at the
+            # SAME station it was rented from
             in_corp = _get_corp_asset_location(stock)
             if in_corp is not None:
+                # Check if the hangar requires return to origin station
+                hangar = FreeUseHangar.objects.filter(
+                    hangar_division=stock.hangar_division, active=True
+                ).first()
+                if hangar and hangar.require_return_to_origin:
+                    if (rental.origin_location_id
+                            and in_corp != rental.origin_location_id):
+                        # Returned to a different station — rental stays open
+                        logger.info(
+                            f"Rental {rental.id}: ship returned to {in_corp} "
+                            f"but origin is {rental.origin_location_id}. "
+                            "Rental stays open until returned to origin.")
+                        continue
+
                 helpers.mark_ship_returned(rental)
                 logger.info(
-                    f"Free-use rental {rental.id} returned "
+                    f"Self-service rental {rental.id} returned "
                     f"(ship back in corp assets at {in_corp})")
             continue
 

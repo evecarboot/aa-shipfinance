@@ -12,9 +12,9 @@
 
   {% if fit.free_use_rate > 0 %}
   <div class="alert alert-success">
-    <strong>{% trans "Free-use available!" %}</strong>
+    <strong>{% trans "Self-service rental available!" %}</strong>
     {% blocktrans with rate=fit.free_use_rate period=fit.free_use_billing_period %}
-    This ship is also in a free-use hangar. Just take one from the hangar in-game
+    This ship is also in a rental hangar. Just take one from the hangar in-game
     and you'll be billed {{ rate }} ISK per {{ period }} for the time you use it.
     No form needed — return it to any corp hangar to stop billing.
     {% endblocktrans %}
@@ -32,7 +32,7 @@
             <option value="hangar_request">{% trans "Hangar access (request)" %}</option>
           </select>
           <small class="text-secondary">
-            {% trans "Free-use hangar rentals are automatic — just take a ship from the free-use hangar." %}
+            {% trans "Self-service rental hangars are automatic — just take a ship from the rental hangar." %}
           </small>
         </div>
 

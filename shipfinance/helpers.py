@@ -364,20 +364,37 @@ def mark_ship_lost(rental_or_finance, is_finance, performed_by=None):
 
 def mark_finance_paid_off(fa, performed_by=None):
     """Mark a finance agreement as paid off (all installments settled)."""
-    stock = fa.ship_stock
-    stock.state = ShipStockState.SOLD
-    stock.save()
     fa.status = FinanceStatus.PAID_OFF
     fa.paid_off_date = timezone.now()
     fa.save()
-    log_action("FINANCE_PAID_OFF", performed_by=performed_by,
-               finance_agreement=fa, ship_stock=stock,
-               detail=f"Finance {fa.id} paid off. Ship now owned by member.")
-    notify_member(
-        fa.member, "Finance Complete!",
-        f"Congratulations! You've paid off your {stock.doctrine_fit.name}. "
-        "The ship is now yours.",
-        eve_character=fa.member_character)
+
+    if fa.is_georgeforge:
+        # GeorgeForge installment plan: mark the GF order as ready to build
+        from . import georgeforge_integration
+        georgeforge_integration.mark_order_ready_to_build(fa.georgeforge_order_id)
+        log_action("FINANCE_PAID_OFF", performed_by=performed_by,
+                   finance_agreement=fa,
+                   detail=f"Finance {fa.id} paid off. GF order #{fa.georgeforge_order_id} "
+                          "marked as ready to build.")
+        notify_member(
+            fa.member, "Installment Plan Complete!",
+            f"You've fully paid off your GeorgeForge order "
+            f"({fa.georgeforge_item_name}). The ship will now be built. "
+            f"Watch for delivery from GeorgeForge.",
+            eve_character=fa.member_character)
+    else:
+        stock = fa.ship_stock
+        if stock:
+            stock.state = ShipStockState.SOLD
+            stock.save()
+        log_action("FINANCE_PAID_OFF", performed_by=performed_by,
+                   finance_agreement=fa, ship_stock=stock,
+                   detail=f"Finance {fa.id} paid off. Ship now owned by member.")
+        notify_member(
+            fa.member, "Finance Complete!",
+            f"Congratulations! You've paid off your {stock.doctrine_fit.name if stock else 'ship'}. "
+            "The ship is now yours.",
+            eve_character=fa.member_character)
 
 
 def mark_finance_defaulted(fa, performed_by=None, detail=""):

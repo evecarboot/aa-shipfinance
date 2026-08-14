@@ -101,7 +101,7 @@ def invoices_installed():
 
 
 def georgeforge_installed():
-    """True if allianceauth-georgeforge is installed (optional delivery hook)."""
+    """True if allianceauth-georgeforge is installed (optional installment plans)."""
     return apps.is_installed("georgeforge")
 
 

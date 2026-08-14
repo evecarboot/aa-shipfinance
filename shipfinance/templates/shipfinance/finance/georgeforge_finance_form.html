@@ -1,0 +1,68 @@
+{% extends "shipfinance/base.html" %}
+{% load i18n %}
+{% block content %}
+<div class="container py-4">
+  {% include "shipfinance/partials/messages.html" %}
+  <h1 class="mb-4"><i class="fas fa-coins me-2"></i>{% trans "Pay GeorgeForge Order in Installments" %}</h1>
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <h5 class="card-title">{% trans "Order Details" %}</h5>
+      <table class="table">
+        <tr><th>{% trans "Order #" %}</th><td>{{ order.id }}</td></tr>
+        <tr><th>{% trans "Item" %}</th><td>{{ order.eve_type.name }}</td></tr>
+        <tr><th>{% trans "Quantity" %}</th><td>{{ order.quantity }}</td></tr>
+        <tr><th>{% trans "Total Cost" %}</th><td><strong>{{ order_total|floatformat:0 }} ISK</strong></td></tr>
+        {% if deposit_total > 0 %}
+        <tr><th>{% trans "Includes Deposit" %}</th><td>{{ deposit_total|floatformat:0 }} ISK</td></tr>
+        {% endif %}
+      </table>
+    </div>
+  </div>
+
+  <div class="alert alert-info">
+    <strong>{% trans "How this works:" %}</strong>
+    {% blocktrans %}
+    You'll pay the full order cost in monthly installments. The original GeorgeForge
+    deposit invoice will be cancelled. Once all installments are paid, your GeorgeForge
+    order advances to "Deposit Received" and the ship gets built. You receive the ship
+    from GeorgeForge when it's delivered.
+    {% endblocktrans %}
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <form method="post">
+        {% csrf_token %}
+        <div class="mb-3">
+          <label class="form-label">{% trans "Choose a Payment Plan" %}</label>
+          <select name="offer_id" class="form-select" required>
+            {% for offer in offers %}
+            <option value="{{ offer.id }}">
+              {{ offer.term_months }} months - {{ offer.interest_rate }}% {{ offer.get_interest_type_display }}
+            </option>
+            {% endfor %}
+          </select>
+          <small class="text-secondary">
+            {% trans "Each plan has different terms (interest rate, months). Pick what works for you." %}
+          </small>
+        </div>
+
+        <div class="mb-3 form-check">
+          <input type="checkbox" name="acknowledge" class="form-check-input" id="ack" required>
+          <label class="form-check-label" for="ack">
+            {% blocktrans with total=order_total %}
+            I acknowledge: I'm splitting the full {{ total }} ISK cost of this GeorgeForge
+            order into monthly installments. The ship will only be built once I've paid off
+            the full balance. I'm responsible for all installment payments. No refunds.
+            {% endblocktrans %}
+          </label>
+        </div>
+
+        <button type="submit" class="btn btn-success"><i class="fas fa-check me-1"></i>{% trans "Start Installment Plan" %}</button>
+        <a href="{% url 'shipfinance:georgeforge_orders' %}" class="btn btn-outline-secondary">{% trans "Cancel" %}</a>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

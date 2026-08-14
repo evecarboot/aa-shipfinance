@@ -25,7 +25,7 @@ class DeliveryMode:
     CHOICES = [
         (CONTRACT, "Contract to member"),
         (HANGAR_REQUEST, "Hangar access (request)"),
-        (FREE_USE, "Free-use hangar (auto-bill)"),
+        (FREE_USE, "Self-service rental hangar"),
     ]
 
 
@@ -210,36 +210,55 @@ class DoctrineFit(models.Model):
 
 
 class FreeUseHangar(models.Model):
-    """A corp hangar division at a location that admins designate as free-use.
+    """A corp hangar division designated as a self-service rental hangar.
 
-    Ships placed in this hangar (matching location_id + hangar_division) are
-    available for any member with the 'use_rent' permission to take without
-    filling out a form. The plugin auto-detects the ship leaving and bills
-    the member for actual time used.
+    This is division-based, not location-based. Setting division 3 means
+    Division 3 at ANY station is a rental hangar. Ships named with the
+    prefix in that division at any station are rental ships.
 
-    Multiple free-use hangars can exist (e.g. one in Jita, one in your home
-    station). Ships in a free-use hangar must belong to a DoctrineFit with
-    a non-zero free_use_rate.
+    Members take ships from this hangar without filling out a form. The plugin
+    auto-detects the ship leaving and bills the member for actual time used.
+
+    Ships are identified by a **name prefix** set by the admin (e.g. '.BANR').
+    Any ship in the designated division whose name starts with the prefix is
+    a rental ship. Ships without the prefix are ignored (so random stuff in
+    the hangar is safe).
+
+    The admin names ships in-game with the prefix (e.g. '.BANR Gila 1').
+    The plugin discovers ships by scanning the division for prefixed names,
+    then tracks them by ESI item_id (stable for the life of the assembled ship).
+
+    If require_return_to_origin is True, the rental only closes when the ship
+    is returned to the SAME station it was rented from. Returning it to a
+    different station keeps the rental open until the ship is back at the origin.
+
+    Ships are matched to DoctrineFit by hull type_id for pricing.
     """
 
-    location_id = models.BigIntegerField(help_text="Station or structure location_id")
-    location_name = models.CharField(
-        max_length=200, blank=True, default="",
-        help_text="Human-readable location name (display only)")
     hangar_division = models.PositiveSmallIntegerField(
-        default=1, help_text="Corp hangar division (1-7)")
+        default=1, unique=True,
+        help_text="Corp hangar division (1-7). This division at ANY station "
+                  "is a rental hangar.")
+    ship_name_prefix = models.CharField(
+        max_length=20, default=".BANR",
+        help_text="Ships in this division whose name starts with this prefix are "
+                  "rental ships. Others are ignored. E.g. '.BANR' matches '.BANR Gila 1'.")
+    require_return_to_origin = models.BooleanField(
+        default=False,
+        help_text="If True, the rental only closes when the ship is returned to "
+                  "the SAME station it was rented from. Returning to a different "
+                  "station keeps the rental open until the ship is back at the origin.")
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ["location_name", "hangar_division"]
-        verbose_name = "Free-Use Hangar"
-        verbose_name_plural = "Free-Use Hangars"
-        unique_together = [("location_id", "hangar_division")]
+        ordering = ["hangar_division"]
+        verbose_name = "Rental Hangar"
+        verbose_name_plural = "Rental Hangars"
 
     def __str__(self):
-        return f"{self.location_name or self.location_id} - Division {self.hangar_division}"
+        return f"Division {self.hangar_division} ({self.ship_name_prefix})"
 
 
 class ShipStock(models.Model):
@@ -302,6 +321,11 @@ class RentalAgreement(models.Model):
     # For free-use: null (no preset duration — billed for actual time used).
     due_date = models.DateTimeField(null=True, blank=True)
     return_detected_at = models.DateTimeField(null=True, blank=True)
+
+    # For self-service rentals: where the ship was rented from.
+    # Used when require_return_to_origin is True on the hangar.
+    origin_location_id = models.BigIntegerField(null=True, blank=True)
+    origin_location_name = models.CharField(max_length=200, blank=True, default="")
 
     billing_period = models.CharField(
         max_length=10, choices=BillingPeriod.CHOICES,
@@ -414,17 +438,37 @@ class FinanceOffer(models.Model):
 
 
 class FinanceAgreement(models.Model):
-    """One finance: a member takes a ship up front and pays installments."""
+    """One finance: a member pays installments for a ship or GeorgeForge deposit.
+
+    For normal ship finance: finance_offer and ship_stock are set, the member
+    gets the ship up front and pays monthly installments.
+
+    For GeorgeForge installment plans: finance_offer and ship_stock are null,
+    georgeforge_order_id is set. The member splits the full GeorgeForge order
+    cost (including any deposit) into monthly installments. The GF order only
+    advances to DEPOSIT_RECIEVED (ready to build) when this finance is fully
+    paid off. The member gets the ship from GeorgeForge when it's delivered.
+    """
 
     finance_offer = models.ForeignKey(
-        FinanceOffer, on_delete=models.PROTECT, related_name="agreements")
+        FinanceOffer, on_delete=models.PROTECT, related_name="agreements",
+        null=True, blank=True)
     ship_stock = models.ForeignKey(
-        ShipStock, on_delete=models.PROTECT, related_name="finances")
+        ShipStock, on_delete=models.PROTECT, related_name="finances",
+        null=True, blank=True)
     member = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="finances")
     member_character = models.ForeignKey(
         EveCharacter, on_delete=models.SET_NULL, null=True,
         related_name="ship_finances")
+
+    # GeorgeForge installment plan: the GF order being financed (null for normal ship finance)
+    georgeforge_order_id = models.BigIntegerField(
+        null=True, blank=True,
+        help_text="GeorgeForge order ID if this is an installment plan for a GF order.")
+    georgeforge_item_name = models.CharField(
+        max_length=200, blank=True, default="",
+        help_text="Item name from the GeorgeForge order (for display).")
 
     # Snapshot of offer terms at acceptance (so later offer edits don't
     # change active agreements).
@@ -467,7 +511,24 @@ class FinanceAgreement(models.Model):
         verbose_name_plural = "Finance Agreements"
 
     def __str__(self):
-        return f"Finance {self.id}: {self.ship_stock.doctrine_fit.name} -> {self.member}"
+        if self.georgeforge_order_id:
+            return f"Finance {self.id}: GF Order #{self.georgeforge_order_id} -> {self.member}"
+        if self.ship_stock:
+            return f"Finance {self.id}: {self.ship_stock.doctrine_fit.name} -> {self.member}"
+        return f"Finance {self.id} -> {self.member}"
+
+    @property
+    def is_georgeforge(self):
+        return self.georgeforge_order_id is not None
+
+    @property
+    def item_display_name(self):
+        """Human-readable name for what's being financed."""
+        if self.is_georgeforge:
+            return self.georgeforge_item_name or f"GF Order #{self.georgeforge_order_id}"
+        if self.ship_stock:
+            return self.ship_stock.doctrine_fit.name
+        return "Unknown"
 
     @property
     def installments_paid(self):

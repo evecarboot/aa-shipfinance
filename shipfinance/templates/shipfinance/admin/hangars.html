@@ -5,10 +5,10 @@
   {% include "shipfinance/partials/messages.html" %}
   <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-      <h1 class="mb-1"><i class="fas fa-warehouse me-2"></i>{% trans "Free-Use Hangars" %}</h1>
-      <p class="text-secondary mb-0">{% trans "Designate corp hangar divisions as free-use. Ships placed here are auto-rented when a member takes them." %}</p>
+      <h1 class="mb-1"><i class="fas fa-warehouse me-2"></i>{% trans "Rental Hangars" %}</h1>
+      <p class="text-secondary mb-0">{% trans "Designate corp hangar divisions as self-service rental hangars. Ships named with the prefix in that division at any station are auto-rented when a member takes them." %}</p>
     </div>
-    <a href="{% url 'shipfinance:admin_hangar_new' %}" class="btn btn-primary"><i class="fas fa-plus me-1"></i>{% trans "Add Hangar" %}</a>
+    <a href="{% url 'shipfinance:admin_hangar_new' %}" class="btn btn-primary"><i class="fas fa-plus me-1"></i>{% trans "Add Division" %}</a>
   </div>
 
   {% if hangars %}
@@ -17,17 +17,18 @@
       <div class="table-responsive">
         <table class="table table-hover mb-0">
           <thead>
-            <tr><th>{% trans "Location" %}</th><th>{% trans "Division" %}</th><th>{% trans "Active" %}</th><th>{% trans "Actions" %}</th></tr>
+            <tr><th>{% trans "Division" %}</th><th>{% trans "Ship Name Prefix" %}</th><th>{% trans "Return to Origin" %}</th><th>{% trans "Active" %}</th><th>{% trans "Actions" %}</th></tr>
           </thead>
           <tbody>
             {% for hangar in hangars %}
             <tr>
-              <td>{{ hangar.location_name|default:hangar.location_id }}</td>
-              <td>{{ hangar.hangar_division }}</td>
+              <td>Division {{ hangar.hangar_division }}</td>
+              <td><code>{{ hangar.ship_name_prefix }}</code></td>
+              <td>{% if hangar.require_return_to_origin %}<span class="badge bg-warning">Yes</span>{% else %}<span class="badge bg-secondary">No</span>{% endif %}</td>
               <td>{% if hangar.active %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-secondary">No</span>{% endif %}</td>
               <td>
                 <a href="{% url 'shipfinance:admin_hangar_edit' hangar.id %}" class="btn btn-sm btn-outline-primary">{% trans "Edit" %}</a>
-                <form method="post" action="{% url 'shipfinance:admin_hangar_delete' hangar.id %}" class="d-inline" onsubmit="return confirm('Delete this hangar?');">
+                <form method="post" action="{% url 'shipfinance:admin_hangar_delete' hangar.id %}" class="d-inline" onsubmit="return confirm('Delete this rental hangar?');">
                   {% csrf_token %}
                   <button type="submit" class="btn btn-sm btn-outline-danger">{% trans "Delete" %}</button>
                 </form>
@@ -40,8 +41,24 @@
     </div>
   </div>
   {% else %}
-  <div class="alert alert-info">{% trans "No free-use hangars configured yet." %}</div>
+  <div class="alert alert-info">{% trans "No rental hangars configured yet." %}</div>
   {% endif %}
+
+  <div class="alert alert-secondary mt-3">
+    <h5 class="alert-heading">{% trans "How it works" %}</h5>
+    <ol class="mb-0">
+      <li>{% trans "Create a doctrine fit with a free-use rate (e.g. 5M ISK per hour)" %}</li>
+      <li>{% trans "Designate a corp hangar division as a rental hangar and set a ship name prefix (e.g. .BANR)" %}</li>
+      <li>{% trans "Name ships in-game with the prefix (e.g. .BANR Gila 1, .BANR Proc 2)" %}</li>
+      <li>{% trans "Place those ships in the designated division at any station" %}</li>
+      <li>{% trans "Members take a ship from the division in-game — the rental starts automatically" %}</li>
+      <li>{% trans "When the ship is returned to a corp hangar, the member is billed for actual time used" %}</li>
+    </ol>
+    <p class="mt-2 mb-0">
+      <strong>{% trans "Return to origin:" %}</strong>
+      {% trans "If enabled, the rental only closes when the ship is returned to the SAME station it was rented from. Returning to a different station keeps the rental open until the ship is back at the origin." %}
+    </p>
+  </div>
 
   <a href="{% url 'shipfinance:admin_dashboard' %}" class="btn btn-outline-secondary mt-3">{% trans "Back to Dashboard" %}</a>
 </div>

@@ -13,7 +13,10 @@
             {% for f in finances %}
             <tr>
               <td>{{ f.id }}</td>
-              <td>{{ f.ship_stock.doctrine_fit.name }}</td>
+              <td>
+                {{ f.item_display_name }}
+                {% if f.is_georgeforge %}<span class="badge bg-info">GF Installments</span>{% endif %}
+              </td>
               <td>{{ f.member.username }}</td>
               <td>{{ f.principal }} ISK</td>
               <td>{{ f.monthly_payment }} ISK</td>
