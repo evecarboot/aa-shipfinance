@@ -8,15 +8,26 @@
 <div class="alert alert-info">{{ fit.description }}</div>
 {% endif %}
 
+{% if fit.free_use_rate > 0 %}
+<div class="alert alert-success">
+  <strong>Free-use available!</strong>
+  This ship is also in a free-use hangar. Just take one from the hangar in-game
+  and you'll be billed {{ fit.free_use_rate|floatformat:2 }} ISK per {{ fit.free_use_billing_period }}
+  for the time you use it. No form needed — return it to any corp hangar to stop billing.
+</div>
+{% endif %}
+
 <form method="post">
   {% csrf_token %}
   <div class="mb-3">
     <label class="form-label">Delivery Mode</label>
     <select name="delivery_mode" class="form-select">
-      {% for value, label in delivery_modes %}
-      <option value="{{ value }}">{{ label }}</option>
-      {% endfor %}
+      <option value="contract">Contract to member</option>
+      <option value="hangar_request">Hangar access (request)</option>
     </select>
+    <small class="form-text text-muted">
+      Free-use hangar rentals are automatic — just take a ship from the free-use hangar.
+    </small>
   </div>
 
   <div class="mb-3">

@@ -6,6 +6,7 @@ from .models import (
     FinanceAgreement,
     FinanceInstallment,
     FinanceOffer,
+    FreeUseHangar,
     NoOverdueShipFinanceFilter,
     RentalAgreement,
     ShipStock,
@@ -25,6 +26,14 @@ class ShipStockAdmin(admin.ModelAdmin):
     list_display = ("doctrine_fit", "item_id", "location_name", "hangar_division", "state")
     list_filter = ("state", "doctrine_fit")
     search_fields = ("item_id", "item_name", "location_name")
+    readonly_fields = ("created_at", "updated_at")
+
+
+@admin.register(FreeUseHangar)
+class FreeUseHangarAdmin(admin.ModelAdmin):
+    list_display = ("location_name", "location_id", "hangar_division", "active")
+    list_filter = ("active",)
+    search_fields = ("location_name", "location_id")
     readonly_fields = ("created_at", "updated_at")
 
 

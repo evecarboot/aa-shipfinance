@@ -228,19 +228,52 @@ def notify_member(member, title, message, eve_character=None):
 # ---------------------------------------------------------------------------
 
 def mark_ship_returned(rental, performed_by=None):
-    """Mark a rental as returned, ship back in corp hangar."""
+    """Mark a rental as returned, ship back in corp hangar.
+
+    For free-use rentals: compute the actual time used and create an
+    invoice for the billed amount (rate * number of billing periods,
+    rounded up). The invoice is created at return time, not upfront.
+    """
     stock = rental.ship_stock
     stock.state = ShipStockState.AVAILABLE
     stock.save()
+
+    now = timezone.now()
     rental.status = RentalStatus.RETURNED
-    rental.return_detected_at = timezone.now()
+    rental.return_detected_at = now
     rental.save()
+
+    # For free-use rentals, bill for actual time used
+    if rental.delivery_mode == DeliveryMode.FREE_USE and rental.invoice_id is None:
+        duration = now - rental.start_time
+        fee = compute_rental_fee(
+            rental.rate, rental.billing_period, duration)
+        if fee > 0 and rental.member_character:
+            invoice = create_invoice(
+                character=rental.member_character,
+                amount=fee,
+                due_date=now + timedelta(days=7),
+                note=f"Free-use rental: {stock.doctrine_fit.name} "
+                     f"({rental.billing_period} billing, "
+                     f"{rental.duration_display})")
+            if invoice:
+                rental.invoice = invoice
+                rental.save()
+                log_action(
+                    "FREE_USE_BILLED", performed_by=performed_by,
+                    rental_agreement=rental, ship_stock=stock,
+                    detail=f"Free-use rental {rental.id} billed {fee} ISK "
+                           f"for {rental.duration_display}")
+
     log_action("SHIP_RETURNED", performed_by=performed_by,
                rental_agreement=rental, ship_stock=stock,
                detail=f"Rental {rental.id} returned")
     notify_member(
         rental.member, "Ship Returned",
-        f"Your rental of {stock.doctrine_fit.name} has been marked returned. Thank you!",
+        f"Your rental of {stock.doctrine_fit.name} has been marked returned. "
+        + (f"You've been billed {fee} ISK for {rental.duration_display}."
+           if rental.delivery_mode == DeliveryMode.FREE_USE and fee > 0
+           else "Thank you!"),
         eve_character=rental.member_character)
 
 

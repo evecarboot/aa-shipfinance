@@ -150,6 +150,18 @@ class DoctrineFit(models.Model):
     )
     description = models.TextField(blank=True, default="")
     active = models.BooleanField(default=True)
+
+    # Free-use hangar pricing. When a ship is taken from a free-use hangar,
+    # the plugin auto-creates a rental and bills at this rate per period.
+    # Set rate to 0 to disable free-use for this fit.
+    free_use_rate = models.DecimalField(
+        max_digits=20, decimal_places=2, default=Decimal("0"),
+        help_text="ISK per billing period for free-use hangar rentals. Set 0 to disable free-use.")
+    free_use_billing_period = models.CharField(
+        max_length=10, choices=BillingPeriod.CHOICES,
+        default=app_settings.SHIPFINANCE_DEFAULT_BILLING_PERIOD,
+        help_text="Billing period for free-use rentals (hourly/daily/weekly).")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -170,6 +182,39 @@ class DoctrineFit(models.Model):
     @property
     def available_stock_count(self):
         return self.stock.filter(state=ShipStockState.AVAILABLE).count()
+
+
+class FreeUseHangar(models.Model):
+    """A corp hangar division at a location that admins designate as free-use.
+
+    Ships placed in this hangar (matching location_id + hangar_division) are
+    available for any member with the 'use_rent' permission to take without
+    filling out a form. The plugin auto-detects the ship leaving and bills
+    the member for actual time used.
+
+    Multiple free-use hangars can exist (e.g. one in Jita, one in your home
+    station). Ships in a free-use hangar must belong to a DoctrineFit with
+    a non-zero free_use_rate.
+    """
+
+    location_id = models.BigIntegerField(help_text="Station or structure location_id")
+    location_name = models.CharField(
+        max_length=200, blank=True, default="",
+        help_text="Human-readable location name (display only)")
+    hangar_division = models.PositiveSmallIntegerField(
+        default=1, help_text="Corp hangar division (1-7)")
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["location_name", "hangar_division"]
+        verbose_name = "Free-Use Hangar"
+        verbose_name_plural = "Free-Use Hangars"
+        unique_together = [("location_id", "hangar_division")]
+
+    def __str__(self):
+        return f"{self.location_name or self.location_id} - Division {self.hangar_division}"
 
 
 class ShipStock(models.Model):
@@ -228,7 +273,9 @@ class RentalAgreement(models.Model):
         default=DeliveryMode.CONTRACT)
 
     start_time = models.DateTimeField(default=timezone.now)
-    due_date = models.DateTimeField()
+    # For contract/hangar_request: the agreed return deadline.
+    # For free-use: null (no preset duration — billed for actual time used).
+    due_date = models.DateTimeField(null=True, blank=True)
     return_detected_at = models.DateTimeField(null=True, blank=True)
 
     billing_period = models.CharField(
@@ -267,12 +314,19 @@ class RentalAgreement(models.Model):
 
     @property
     def is_overdue(self):
-        return self.status == RentalStatus.ACTIVE and timezone.now() > self.due_date
+        return (self.status == RentalStatus.ACTIVE
+                and self.due_date is not None
+                and timezone.now() > self.due_date)
 
     @property
     def duration_display(self):
         from datetime import timedelta
-        delta = self.due_date - self.start_time
+        if self.due_date is None:
+            # Free-use: show actual duration so far (or until return)
+            end = self.return_detected_at or timezone.now()
+            delta = end - self.start_time
+        else:
+            delta = self.due_date - self.start_time
         days = delta.total_seconds() / 86400
         if days >= 1:
             return f"{days:.1f} days"

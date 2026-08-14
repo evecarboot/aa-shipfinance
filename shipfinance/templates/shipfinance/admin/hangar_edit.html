@@ -1,0 +1,27 @@
+{% extends "shipfinance/base.html" %}
+{% block shipfinance_content %}
+<h1>{% if hangar %}Edit Hangar{% else %}New Free-Use Hangar{% endif %}</h1>
+<form method="post">
+  {% csrf_token %}
+  <div class="mb-3">
+    <label class="form-label">Location ID</label>
+    <input type="number" name="location_id" class="form-control" value="{{ hangar.location_id|default:'' }}" required>
+    <small class="form-text text-muted">Station or structure ID from ESI. You can find this in corptools or via ESI.</small>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Location Name (optional)</label>
+    <input type="text" name="location_name" class="form-control" value="{{ hangar.location_name|default:'' }}" placeholder="e.g. Jita 4-4, Home Keepstar">
+    <small class="form-text text-muted">Human-readable name for display only.</small>
+  </div>
+  <div class="mb-3">
+    <label class="form-label">Hangar Division (1-7)</label>
+    <input type="number" name="hangar_division" class="form-control" value="{{ hangar.hangar_division|default:'1' }}" min="1" max="7" required>
+  </div>
+  <div class="mb-3 form-check">
+    <input type="checkbox" name="active" class="form-check-input" id="active" {% if not hangar or hangar.active %}checked{% endif %}>
+    <label class="form-check-label" for="active">Active</label>
+  </div>
+  <button type="submit" class="btn btn-primary">Save</button>
+  <a href="{% url 'shipfinance:admin_hangars' %}" class="btn btn-secondary">Cancel</a>
+</form>
+{% endblock %}

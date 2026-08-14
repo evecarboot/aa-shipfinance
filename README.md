@@ -10,10 +10,9 @@ Inspired by real-world rent-a-car and car-finance programs — but for EVE Onlin
 
 ### Rent
 - Members rent a fitted doctrine ship for a period (hours/days/weeks).
-- Three delivery modes:
-  - **Contract**: plugin creates a contract to the member (or admin does manually).
-  - **Hangar request**: member requests access to a dedicated rental hangar division.
-  - **Free-use**: member takes the ship from a free-use hangar, plugin bills after the fact.
+- Two ways to rent:
+  - **Contract / hangar request** (form-based): member picks a ship, chooses delivery mode, duration, and billing period, acknowledges terms. Plugin creates an invoice upfront.
+  - **Free-use hangar** (automatic, no form): admin sets a per-fit free-use rate. Member just takes the ship from the free-use hangar in-game. Plugin auto-detects the ship leaving the corp hangar, creates a rental, and bills for actual time used when the ship is returned to any corp hangar.
 - ESI asset polling detects when the ship is returned to the corp hangar.
 - zKillboard/ESI killmails detect if the ship is destroyed.
 - Rental fee invoiced via the invoices plugin.
@@ -36,9 +35,16 @@ Inspired by real-world rent-a-car and car-finance programs — but for EVE Onlin
 
 ### Requirements
 - AllianceAuth 5.0+
-- [allianceauth-corptools](https://github.com/Solar-Helix-Independent-Transport/allianceauth-corp-tools) (for asset tracking)
+- [allianceauth-corptools](https://github.com/Solar-Helix-Independent-Transport/allianceauth-corp-tools) (recommended for fast asset lookups; plugin falls back to direct ESI if not installed)
 - [allianceauth-invoices](https://github.com/Solar-Helix-Independent-Transport/allianceauth-invoice-manager) v0.1.9+ (for payment collection)
 - Optional: [allianceauth-georgeforge](https://pypi.org/project/allianceauth-georgeforge/) (for automated contract delivery)
+
+### ESI scopes required
+The plugin uses ESI directly for asset tracking. Ensure your corp has tokens with these scopes:
+- `esi-assets.read_corporation_assets.v1` (requires Director role) — for corp asset polling
+- `esi-assets.read_assets.v1` — for character asset lookups (free-use detection)
+
+If corp-tools is installed, the plugin uses corp-tools' cached asset data (faster). If not, it falls back to direct ESI calls.
 
 ### Steps
 
@@ -137,8 +143,9 @@ Assign `access_shipfinance` + `use_rent`/`use_finance` to your trusted request-o
 
 ### Admins
 
-1. **Create doctrine fits** (`/shipfinance/admin/fits/`): define the hull, fitting (DNA string), and skill tier label.
+1. **Create doctrine fits** (`/shipfinance/admin/fits/`): define the hull, fitting (DNA string), skill tier label, and free-use hangar rate (if you want free-use rentals for this fit).
 2. **Register ship stock** (`/shipfinance/admin/stock/`): add each assembled ship by its ESI `item_id`, location, and hangar division.
+3. **Designate free-use hangars** (`/shipfinance/admin/hangars/`): mark which corp hangar divisions (at which locations) are free-use. Ships in these hangars with a non-zero free-use rate are auto-rented when taken.
 3. **Create finance offers** (`/shipfinance/admin/offers/`): define principal, term, interest, and insurance terms for each fit.
 4. **Monitor agreements** (`/shipfinance/admin/rentals/` and `/shipfinance/admin/finances/`): mark ships returned, destroyed, lost, or finances paid off / defaulted.
 5. **Review audit log** (`/shipfinance/admin/audit/`): every action is logged.
@@ -159,15 +166,16 @@ Assign `access_shipfinance` + `use_rent`/`use_finance` to your trusted request-o
 Ships are tracked by their **ESI `item_id`** — a stable identifier for the life of the assembled ship. **Ship names are NOT used for tracking** and should not be set to anything that reveals the rental program (e.g. do not name ships `SF-RENT-123`). Members can rename ships freely; tracking is unaffected.
 
 ### Return detection
-A periodic task polls corp assets (via corp-tools). If a rented ship's `item_id` reappears in its expected corp hangar division at its home location, the rental is marked returned.
+A periodic task polls corp assets via **ESI** (`/corporations/{corp_id}/assets/`) directly, falling back to corp-tools if ESI is unavailable. If a rented ship's `item_id` reappears in its expected corp hangar division at its home location, the rental is marked returned. For free-use rentals, the ship can be returned to **any** corp hangar in any station.
 
 ### Destroyed detection
-If a rented/financed ship is no longer in the corp hangar or the member's assets, the plugin checks zKillboard (and/or ESI killmails) for a recent loss matching the hull type and member character. If found, the agreement is closed as destroyed.
+If a rented/financed ship is no longer in the corp hangar or the member's assets, the plugin checks the **zKillboard API** for a recent loss matching the hull type and member character. If found, the agreement is closed as destroyed. zKill matching is best-effort (see limitations below).
 
 ### Limitations (be aware)
 - **Repackaging destroys the `item_id`**: if a member repackages the ship, tracking is lost. This is a trust issue, not a plugin issue — the request-only group mitigates it.
 - **Poll cadence bounds accuracy**: if assets are polled hourly, return/billing detection is accurate to ~1 hour. Configure via `SHIPFINANCE_ASSET_POLL_MINUTES`.
-- **Take-and-return between polls is invisible**: in free-use mode, if a member takes and returns a ship within one poll cycle, the plugin may not see it. This is a known trade-off of the free-use model.
+- **Take-and-return between polls is invisible**: in free-use mode, if a member takes and returns a ship within one poll cycle, the plugin may not see it. This is a known trade-off of the free-use model. Configure `SHIPFINANCE_ASSET_POLL_MINUTES` to balance accuracy vs ESI load.
+- **Free-use ships can be in any station**: the plugin tracks ships by ESI `item_id`, not by location. A ship taken from a free-use hangar in one station can be returned to any corp hangar in any station — the return task checks corp assets globally, not just the home hangar.
 - **zKill matching is best-effort**: matches on hull type + victim character + recency. It does not use `item_id` (zKill doesn't expose it). False positives are possible but unlikely for doctrine hulls.
 
 ---

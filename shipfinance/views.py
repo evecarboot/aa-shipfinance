@@ -17,6 +17,7 @@ from .models import (
     FinanceAgreement,
     FinanceOffer,
     FinanceStatus,
+    FreeUseHangar,
     InsuranceCoverage,
     InterestType,
     RentalAgreement,
@@ -70,7 +71,12 @@ def browse_ships(request):
 @login_required
 @permission_required("shipfinance.use_rent")
 def rent_ship(request, fit_id):
-    """Rent a ship: member picks a fit, chooses period, acknowledges terms."""
+    """Rent a ship: member picks a fit, chooses period, acknowledges terms.
+
+    This is for contract/hangar_request rentals only. Free-use rentals
+    are auto-detected by the detect_free_use_taken task when a member
+    takes a ship from a free-use hangar — no form needed.
+    """
     fit = get_object_or_404(DoctrineFit, pk=fit_id, active=True)
     available_stock = ShipStock.objects.filter(
         doctrine_fit=fit, state=ShipStockState.AVAILABLE)
@@ -87,6 +93,11 @@ def rent_ship(request, fit_id):
         delivery_mode = request.POST.get("delivery_mode", DeliveryMode.CONTRACT)
         billing_period = request.POST.get("billing_period", app_settings.SHIPFINANCE_DEFAULT_BILLING_PERIOD)
         acknowledge = request.POST.get("acknowledge") == "on"
+
+        # Free-use is auto-detected, not a form choice
+        if delivery_mode == DeliveryMode.FREE_USE:
+            messages.error(request, "Free-use rentals are automatic — just take a ship from the free-use hangar.")
+            return redirect("shipfinance:rent_ship", fit_id=fit.id)
 
         if not acknowledge:
             messages.error(request, "You must acknowledge the terms to rent.")
@@ -343,11 +354,14 @@ def admin_fit_edit(request, fit_id=None):
         skill_tier = request.POST.get("skill_tier", "")
         description = request.POST.get("description", "")
         active = request.POST.get("active") == "on"
+        free_use_billing_period = request.POST.get(
+            "free_use_billing_period", app_settings.SHIPFINANCE_DEFAULT_BILLING_PERIOD)
 
         try:
             hull_type_id = int(request.POST.get("hull_type_id", 0))
-        except ValueError:
-            messages.error(request, "Hull type ID must be a number.")
+            free_use_rate = Decimal(request.POST.get("free_use_rate", "0"))
+        except (ValueError, InvalidOperation):
+            messages.error(request, "Hull type ID and free-use rate must be numbers.")
             return redirect(request.path)
 
         if not name or not hull_type_id:
@@ -362,16 +376,19 @@ def admin_fit_edit(request, fit_id=None):
             fit.skill_tier = skill_tier
             fit.description = description
             fit.active = active
+            fit.free_use_rate = free_use_rate
+            fit.free_use_billing_period = free_use_billing_period
             fit.save()
             messages.success(request, f"Updated fit: {fit.name}")
         else:
             fit = DoctrineFit.objects.create(
                 name=name, hull_type_id=hull_type_id, hull_type_name=hull_type_name,
-                dna=dna, skill_tier=skill_tier, description=description, active=active)
+                dna=dna, skill_tier=skill_tier, description=description, active=active,
+                free_use_rate=free_use_rate, free_use_billing_period=free_use_billing_period)
             messages.success(request, f"Created fit: {fit.name}")
         return redirect("shipfinance:admin_fits")
 
-    ctx = {"fit": fit}
+    ctx = {"fit": fit, "billing_periods": BillingPeriod.CHOICES}
     return render(request, "shipfinance/admin/fit_edit.html", ctx)
 
 
@@ -454,6 +471,69 @@ def admin_stock_delete(request, stock_id):
         stock.delete()
         messages.success(request, f"Deleted stock: {stock}")
     return redirect("shipfinance:admin_stock")
+
+
+# ---------------------------------------------------------------------------
+# Admin: free-use hangars
+# ---------------------------------------------------------------------------
+
+@login_required
+@permission_required("shipfinance.manage_shipfinance")
+def admin_hangars(request):
+    hangars = FreeUseHangar.objects.all().order_by("location_name", "hangar_division")
+    ctx = {"hangars": hangars}
+    return render(request, "shipfinance/admin/hangars.html", ctx)
+
+
+@login_required
+@permission_required("shipfinance.manage_shipfinance")
+def admin_hangar_edit(request, hangar_id=None):
+    hangar = get_object_or_404(FreeUseHangar, pk=hangar_id) if hangar_id else None
+    if request.method == "POST":
+        location_name = request.POST.get("location_name", "")
+        active = request.POST.get("active") == "on"
+
+        try:
+            location_id = int(request.POST.get("location_id", 0))
+            hangar_division = int(request.POST.get("hangar_division", 1))
+        except ValueError:
+            messages.error(request, "Location ID and hangar division must be numbers.")
+            return redirect(request.path)
+
+        if not location_id:
+            messages.error(request, "Location ID is required.")
+            return redirect(request.path)
+
+        if hangar_division < 1 or hangar_division > 7:
+            messages.error(request, "Hangar division must be 1-7.")
+            return redirect(request.path)
+
+        if hangar:
+            hangar.location_id = location_id
+            hangar.location_name = location_name
+            hangar.hangar_division = hangar_division
+            hangar.active = active
+            hangar.save()
+            messages.success(request, f"Updated hangar: {hangar}")
+        else:
+            hangar = FreeUseHangar.objects.create(
+                location_id=location_id, location_name=location_name,
+                hangar_division=hangar_division, active=active)
+            messages.success(request, f"Created hangar: {hangar}")
+        return redirect("shipfinance:admin_hangars")
+
+    ctx = {"hangar": hangar}
+    return render(request, "shipfinance/admin/hangar_edit.html", ctx)
+
+
+@login_required
+@permission_required("shipfinance.manage_shipfinance")
+def admin_hangar_delete(request, hangar_id):
+    hangar = get_object_or_404(FreeUseHangar, pk=hangar_id)
+    if request.method == "POST":
+        hangar.delete()
+        messages.success(request, f"Deleted hangar: {hangar}")
+    return redirect("shipfinance:admin_hangars")
 
 
 # ---------------------------------------------------------------------------

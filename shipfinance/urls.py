@@ -27,6 +27,12 @@ urlpatterns = [
     path("admin/stock/<int:stock_id>/", views.admin_stock_edit, name="admin_stock_edit"),
     path("admin/stock/<int:stock_id>/delete/", views.admin_stock_delete, name="admin_stock_delete"),
 
+    # Admin: free-use hangars
+    path("admin/hangars/", views.admin_hangars, name="admin_hangars"),
+    path("admin/hangars/new/", views.admin_hangar_edit, name="admin_hangar_new"),
+    path("admin/hangars/<int:hangar_id>/", views.admin_hangar_edit, name="admin_hangar_edit"),
+    path("admin/hangars/<int:hangar_id>/delete/", views.admin_hangar_delete, name="admin_hangar_delete"),
+
     # Admin: finance offers
     path("admin/offers/", views.admin_offers, name="admin_offers"),
     path("admin/offers/new/", views.admin_offer_edit, name="admin_offer_new"),
