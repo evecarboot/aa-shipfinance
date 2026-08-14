@@ -89,8 +89,8 @@ SHIPFINANCE_PAYMENT_CORP = 123456789
 # Invoice ref prefix (keep opaque for op-sec; appears in wallet journal)
 SHIPFINANCE_INVOICE_REF_PREFIX = "SF"
 
-# Default interest type for new offers: "FLAT" or "APR"
-SHIPFINANCE_DEFAULT_INTEREST_TYPE = "FLAT"
+# Default interest type for new offers: "flat" or "apr"
+SHIPFINANCE_DEFAULT_INTEREST_TYPE = "flat"
 
 # Default interest rate (percentage)
 SHIPFINANCE_DEFAULT_INTEREST_RATE = 10
@@ -98,14 +98,14 @@ SHIPFINANCE_DEFAULT_INTEREST_RATE = 10
 # Default insurance premium rate (% of principal)
 SHIPFINANCE_DEFAULT_INSURANCE_PREMIUM_RATE = 5
 
-# Default insurance coverage: "REMAINING_BALANCE", "PRINCIPAL", "FLAT_AMOUNT"
-SHIPFINANCE_DEFAULT_INSURANCE_COVERAGE = "REMAINING_BALANCE"
+# Default insurance coverage: "remaining_balance", "principal", "flat_amount"
+SHIPFINANCE_DEFAULT_INSURANCE_COVERAGE = "remaining_balance"
 
 # Refunds on default (False = no refunds, default)
 SHIPFINANCE_REFUNDS_ALLOWED = False
 
-# Default billing period for free-use rentals: "HOURLY", "DAILY", "WEEKLY"
-SHIPFINANCE_DEFAULT_BILLING_PERIOD = "DAILY"
+# Default billing period for free-use rentals: "hourly", "daily", "weekly"
+SHIPFINANCE_DEFAULT_BILLING_PERIOD = "daily"
 
 # Asset poll cadence (minutes) for return/destroyed detection
 SHIPFINANCE_ASSET_POLL_MINUTES = 60
@@ -208,7 +208,7 @@ This policy is shown to members in the terms text before they accept a finance o
 
 ### Running tests
 ```bash
-pip install -e .
+pip install -e ".[tests]"
 pytest tests/
 ```
 
@@ -231,7 +231,7 @@ shipfinance/
   templates/shipfinance/   # all templates
   templatetags/
   management/commands/
-  tests/
+tests/                     # test suite (settings, test cases, fakeredis plugin)
 ```
 
 ---

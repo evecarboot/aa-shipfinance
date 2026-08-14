@@ -1,6 +1,5 @@
 """Celery tasks: asset polling for return detection, killmail/zKill for destroyed detection."""
 import logging
-from datetime import timedelta
 
 import requests
 from celery import shared_task
@@ -10,13 +9,10 @@ from allianceauth.services.tasks import QueueOnce
 
 from . import app_settings, helpers
 from .models import (
-    DeliveryMode,
     FinanceAgreement,
     FinanceStatus,
     RentalAgreement,
     RentalStatus,
-    ShipStock,
-    ShipStockState,
 )
 
 logger = logging.getLogger(__name__)

@@ -253,7 +253,6 @@ def mark_ship_destroyed(rental_or_finance, is_finance, performed_by=None,
         stock.state = ShipStockState.DESTROYED
         stock.save()
         if fa.insurance_purchased and fa.insurance_coverage_amount > 0:
-            fa.status = FinanceStatus.DESTROYED_INSURED
             # Settle remaining balance via insurance: void unpaid installments
             coverage = fa.insurance_coverage_amount
             remaining = fa.remaining_balance
@@ -269,8 +268,12 @@ def mark_ship_destroyed(rental_or_finance, is_finance, performed_by=None,
             else:
                 # Partial coverage: mark what we can, member still owes the rest
                 fa.status = FinanceStatus.DESTROYED_INSURED
-                fa.notes = (fa.notes or "") + f"\nPartial insurance coverage: {coverage} of {remaining}"
-                fa.save()
+                # Log the partial coverage detail to the audit log
+                log_action(
+                    "INSURANCE_PARTIAL_COVERAGE", finance_agreement=fa,
+                    ship_stock=stock,
+                    detail=f"Finance {fa.id} partial insurance: {coverage} of {remaining} ISK covered. "
+                           f"Member still owes {remaining - coverage} ISK.")
         else:
             # No insurance: member still owes the full remaining balance
             fa.status = FinanceStatus.DESTROYED

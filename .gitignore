@@ -1,12 +1,34 @@
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 .eggs/
 dist/
 build/
+
+# Testing (local dev only — not part of the plugin package)
+tests/
 .pytest_cache/
 .tox/
 htmlcov/
 .coverage
-.env
+.coverage.*
 *.sqlite3
+conftest.py
+pytest.ini
+sitecustomize.py
+
+# Environment
+.env
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

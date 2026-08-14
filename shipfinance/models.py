@@ -3,9 +3,7 @@ import logging
 from decimal import Decimal
 
 from django.conf import settings
-from django.contrib.auth.models import User
 from django.db import models
-from django.urls import reverse
 from django.utils import timezone
 
 from allianceauth.eveonline.models import EveCharacter
@@ -196,7 +194,7 @@ class ShipStock(models.Model):
         max_length=20, choices=ShipStockState.CHOICES,
         default=ShipStockState.AVAILABLE)
     registered_by = models.ForeignKey(
-        User, on_delete=models.SET_NULL, null=True, blank=True,
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="registered_stock")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -220,7 +218,7 @@ class RentalAgreement(models.Model):
     ship_stock = models.ForeignKey(
         ShipStock, on_delete=models.PROTECT, related_name="rentals")
     member = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name="rentals")
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="rentals")
     member_character = models.ForeignKey(
         EveCharacter, on_delete=models.SET_NULL, null=True,
         related_name="ship_rentals")
@@ -344,7 +342,7 @@ class FinanceAgreement(models.Model):
     ship_stock = models.ForeignKey(
         ShipStock, on_delete=models.PROTECT, related_name="finances")
     member = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name="finances")
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="finances")
     member_character = models.ForeignKey(
         EveCharacter, on_delete=models.SET_NULL, null=True,
         related_name="ship_finances")
@@ -471,7 +469,7 @@ class AuditLog(models.Model):
         related_name="audit_entries")
     action = models.CharField(max_length=50)
     performed_by = models.ForeignKey(
-        User, on_delete=models.SET_NULL, null=True, blank=True,
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="shipfinance_audit_actions")
     detail = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -523,6 +521,8 @@ class NoOverdueShipFinanceFilter(models.Model):
 
         co = CharacterOwnership.objects.filter(
             user__in=users).select_related("user", "character")
+        # Map character_id -> user_id for overdue lookup
+        char_to_user = {co_obj.character_id: co_obj.user_id for co_obj in co}
         now = timezone.now()
         # Overdue invoices for these users' characters
         overdue = Invoice.objects.filter(
@@ -530,8 +530,9 @@ class NoOverdueShipFinanceFilter(models.Model):
             due_date__lte=now, paid=False)
         counts = defaultdict(int)
         for inv in overdue:
-            uid = inv.character.character_ownership.user.id
-            counts[uid] += 1
+            uid = char_to_user.get(inv.character_id)
+            if uid:
+                counts[uid] += 1
 
         failure = self.swap_logic
         output = defaultdict(lambda: {"message": "No Overdue", "check": False})
@@ -542,11 +543,3 @@ class NoOverdueShipFinanceFilter(models.Model):
             else:
                 output[u.id] = {"message": "No Overdue", "check": not failure}
         return output
-
-
-# ---------------------------------------------------------------------------
-# Permissions
-# ---------------------------------------------------------------------------
-
-# These are declared via Meta.permissions on a dummy model registration below
-# using the standard Django pattern. We attach them to DoctrineFit for simplicity.

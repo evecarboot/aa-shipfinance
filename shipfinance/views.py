@@ -1,26 +1,23 @@
 """Views for shipfinance: member browse/rent/finance, admin manage."""
 import logging
 from datetime import timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
-from allianceauth.eveonline.models import EveCharacter
-
 from . import app_settings, helpers
 from .georgeforge_integration import create_delivery_contract
 from .models import (
-    AuditLog,
     BillingPeriod,
     DeliveryMode,
     DoctrineFit,
     FinanceAgreement,
-    FinanceInstallment,
     FinanceOffer,
     FinanceStatus,
+    InsuranceCoverage,
     InterestType,
     RentalAgreement,
     RentalStatus,
@@ -82,19 +79,32 @@ def rent_ship(request, fit_id):
         messages.error(request, f"No {fit.name} currently available for rent.")
         return redirect("shipfinance:browse")
 
+    if not app_settings.invoices_installed():
+        messages.error(request, "The invoices plugin is required for rentals.")
+        return redirect("shipfinance:browse")
+
     if request.method == "POST":
         delivery_mode = request.POST.get("delivery_mode", DeliveryMode.CONTRACT)
         billing_period = request.POST.get("billing_period", app_settings.SHIPFINANCE_DEFAULT_BILLING_PERIOD)
-        duration_hours = int(request.POST.get("duration_hours", 24))
-        rate = Decimal(request.POST.get("rate", "0"))
         acknowledge = request.POST.get("acknowledge") == "on"
 
         if not acknowledge:
             messages.error(request, "You must acknowledge the terms to rent.")
             return redirect("shipfinance:rent_ship", fit_id=fit.id)
 
+        try:
+            duration_hours = int(request.POST.get("duration_hours", 24))
+            rate = Decimal(request.POST.get("rate", "0"))
+        except (ValueError, InvalidOperation):
+            messages.error(request, "Invalid duration or rate value.")
+            return redirect("shipfinance:rent_ship", fit_id=fit.id)
+
         if rate <= 0:
             messages.error(request, "Rate must be greater than zero.")
+            return redirect("shipfinance:rent_ship", fit_id=fit.id)
+
+        if duration_hours <= 0:
+            messages.error(request, "Duration must be at least 1 hour.")
             return redirect("shipfinance:rent_ship", fit_id=fit.id)
 
         # Pick the first available stock
@@ -179,6 +189,10 @@ def finance_ship(request, offer_id):
 
     if not available_stock.exists():
         messages.error(request, f"No {offer.doctrine_fit.name} currently in stock to finance.")
+        return redirect("shipfinance:browse")
+
+    if not app_settings.invoices_installed():
+        messages.error(request, "The invoices plugin is required for finance.")
         return redirect("shipfinance:browse")
 
     # Compute schedule for display
@@ -324,12 +338,17 @@ def admin_fit_edit(request, fit_id=None):
     fit = get_object_or_404(DoctrineFit, pk=fit_id) if fit_id else None
     if request.method == "POST":
         name = request.POST.get("name", "")
-        hull_type_id = int(request.POST.get("hull_type_id", 0))
         hull_type_name = request.POST.get("hull_type_name", "")
         dna = request.POST.get("dna", "")
         skill_tier = request.POST.get("skill_tier", "")
         description = request.POST.get("description", "")
         active = request.POST.get("active") == "on"
+
+        try:
+            hull_type_id = int(request.POST.get("hull_type_id", 0))
+        except ValueError:
+            messages.error(request, "Hull type ID must be a number.")
+            return redirect(request.path)
 
         if not name or not hull_type_id:
             messages.error(request, "Name and hull type ID are required.")
@@ -388,9 +407,7 @@ def admin_stock_edit(request, stock_id=None):
         fit_id = request.POST.get("doctrine_fit")
         item_id = request.POST.get("item_id", "").strip()
         item_name = request.POST.get("item_name", "")
-        location_id = request.POST.get("location_id", "0")
         location_name = request.POST.get("location_name", "")
-        hangar_division = int(request.POST.get("hangar_division", 1))
         state = request.POST.get("state", ShipStockState.AVAILABLE)
 
         if not fit_id or not item_id:
@@ -400,15 +417,17 @@ def admin_stock_edit(request, stock_id=None):
         fit = get_object_or_404(DoctrineFit, pk=fit_id)
         try:
             item_id_int = int(item_id)
+            location_id_int = int(request.POST.get("location_id", "0"))
+            hangar_division = int(request.POST.get("hangar_division", 1))
         except ValueError:
-            messages.error(request, "Item ID must be a number.")
+            messages.error(request, "Item ID, location ID, and hangar division must be numbers.")
             return redirect(request.path)
 
         if stock:
             stock.doctrine_fit = fit
             stock.item_id = item_id_int
             stock.item_name = item_name
-            stock.location_id = int(location_id)
+            stock.location_id = location_id_int
             stock.location_name = location_name
             stock.hangar_division = hangar_division
             stock.state = state
@@ -417,7 +436,7 @@ def admin_stock_edit(request, stock_id=None):
         else:
             stock = ShipStock.objects.create(
                 doctrine_fit=fit, item_id=item_id_int, item_name=item_name,
-                location_id=int(location_id), location_name=location_name,
+                location_id=location_id_int, location_name=location_name,
                 hangar_division=hangar_division, state=state,
                 registered_by=request.user)
             messages.success(request, f"Registered stock: {stock}")
@@ -457,17 +476,22 @@ def admin_offer_edit(request, offer_id=None):
     if request.method == "POST":
         fit_id = request.POST.get("doctrine_fit")
         name = request.POST.get("name", "")
-        principal = Decimal(request.POST.get("principal", "0"))
-        term_months = int(request.POST.get("term_months", 3))
         interest_type = request.POST.get("interest_type", InterestType.FLAT)
-        interest_rate = Decimal(request.POST.get("interest_rate", "10"))
-        insurance_enabled = request.POST.get("insurance_enabled") == "on"
-        insurance_premium_rate = Decimal(request.POST.get("insurance_premium_rate", "5"))
         insurance_coverage = request.POST.get(
             "insurance_coverage", app_settings.SHIPFINANCE_DEFAULT_INSURANCE_COVERAGE)
-        insurance_flat_amount = Decimal(request.POST.get("insurance_flat_amount", "0"))
         terms_text = request.POST.get("terms_text", "")
         active = request.POST.get("active") == "on"
+        insurance_enabled = request.POST.get("insurance_enabled") == "on"
+
+        try:
+            principal = Decimal(request.POST.get("principal", "0"))
+            term_months = int(request.POST.get("term_months", 3))
+            interest_rate = Decimal(request.POST.get("interest_rate", "10"))
+            insurance_premium_rate = Decimal(request.POST.get("insurance_premium_rate", "5"))
+            insurance_flat_amount = Decimal(request.POST.get("insurance_flat_amount", "0"))
+        except (ValueError, InvalidOperation):
+            messages.error(request, "Invalid numeric value in form.")
+            return redirect(request.path)
 
         if not fit_id or not name or principal <= 0:
             messages.error(request, "Fit, name, and a positive principal are required.")
@@ -504,8 +528,7 @@ def admin_offer_edit(request, offer_id=None):
     ctx = {
         "offer": offer, "fits": fits,
         "interest_types": InterestType.CHOICES,
-        "coverage_choices": __import__(
-            "shipfinance.models", fromlist=["InsuranceCoverage"]).InsuranceCoverage.CHOICES,
+        "coverage_choices": InsuranceCoverage.CHOICES,
     }
     return render(request, "shipfinance/admin/offer_edit.html", ctx)
 

@@ -8,33 +8,36 @@ readme = "README.md"
 keywords = ["allianceauth", "eveonline", "ship", "finance", "rental"]
 license = { file = "LICENSE" }
 authors = [{ name = "aa-shipfinance contributors" }]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 classifiers = [
     "Environment :: Web Environment",
     "Framework :: Celery",
     "Framework :: Django",
-    "Framework :: Django :: 4.0",
-    "Framework :: Django :: 4.2",
+    "Framework :: Django :: 5.0",
+    "Framework :: Django :: 5.2",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: Implementation :: CPython",
     "Topic :: Internet :: WWW/HTTP",
     "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
 ]
 dynamic = ["description", "version"]
 dependencies = [
-    "allianceauth>=3",
-    "allianceauth-corptools>=2.5.5",
+    "allianceauth>=5,<6",
+    "allianceauth-corptools>=3.3",
     "allianceauth-invoices>=0.1.9",
 ]
+
+[project.optional-dependencies]
+georgeforge = ["allianceauth-georgeforge"]
+tests = ["pytest", "pytest-django", "fakeredis"]
 
 [project.urls]
 Home = "https://github.com/your-org/aa-shipfinance"

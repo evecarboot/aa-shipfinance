@@ -1,15 +1,17 @@
 """Auth hooks: menu item, URL registration, secure group filter."""
+from django.utils.translation import gettext_lazy as _
+
 from allianceauth import hooks
 from allianceauth.services.hooks import MenuItemHook, UrlHook
 
-from . import __title__, app_settings, urls
+from . import app_settings, urls
 
 
 class ShipFinanceMenuItem(MenuItemHook):
     def __init__(self):
         MenuItemHook.__init__(
             self,
-            app_settings.SHIPFINANCE_APP_NAME,
+            _(app_settings.SHIPFINANCE_APP_NAME),
             "fas fa-rocket fa-fw",
             "shipfinance:index",
             navactive=["shipfinance:"],

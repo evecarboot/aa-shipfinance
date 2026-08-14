@@ -29,9 +29,10 @@ SHIPFINANCE_PAYMENT_CORP = getattr(
 # journal entries. Default "SF-" is short and non-descriptive.
 SHIPFINANCE_INVOICE_REF_PREFIX = getattr(settings, "SHIPFINANCE_INVOICE_REF_PREFIX", "SF")
 
-# Default interest type for new finance offers: "FLAT" or "APR".
+# Default interest type for new finance offers: "flat" or "apr".
+# Must match InterestType constants (lowercase).
 SHIPFINANCE_DEFAULT_INTEREST_TYPE = getattr(
-    settings, "SHIPFINANCE_DEFAULT_INTEREST_TYPE", "FLAT"
+    settings, "SHIPFINANCE_DEFAULT_INTEREST_TYPE", "flat"
 )
 
 # Default interest rate (percentage, e.g. 10 = 10%).
@@ -44,17 +45,19 @@ SHIPFINANCE_DEFAULT_INSURANCE_PREMIUM_RATE = getattr(
     settings, "SHIPFINANCE_DEFAULT_INSURANCE_PREMIUM_RATE", 5
 )
 
-# Default insurance coverage mode: "REMAINING_BALANCE", "PRINCIPAL", "FLAT_AMOUNT".
+# Default insurance coverage mode: "remaining_balance", "principal", "flat_amount".
+# Must match InsuranceCoverage constants (lowercase).
 SHIPFINANCE_DEFAULT_INSURANCE_COVERAGE = getattr(
-    settings, "SHIPFINANCE_DEFAULT_INSURANCE_COVERAGE", "REMAINING_BALANCE"
+    settings, "SHIPFINANCE_DEFAULT_INSURANCE_COVERAGE", "remaining_balance"
 )
 
 # Refunds on default. False = no refunds (default, trust + no-refund policy).
 SHIPFINANCE_REFUNDS_ALLOWED = getattr(settings, "SHIPFINANCE_REFUNDS_ALLOWED", False)
 
-# Default billing period for free-use rentals: "HOURLY", "DAILY", "WEEKLY".
+# Default billing period for free-use rentals: "hourly", "daily", "weekly".
+# Must match BillingPeriod constants (lowercase).
 SHIPFINANCE_DEFAULT_BILLING_PERIOD = getattr(
-    settings, "SHIPFINANCE_DEFAULT_BILLING_PERIOD", "DAILY"
+    settings, "SHIPFINANCE_DEFAULT_BILLING_PERIOD", "daily"
 )
 
 # Default rental rate per period (ISK). 0 means admin must set per-fit.
@@ -99,8 +102,7 @@ def invoices_installed():
 
 def georgeforge_installed():
     """True if allianceauth-georgeforge is installed (optional delivery hook)."""
-    # GeorgeForge's app label; check a few common ones.
-    return apps.is_installed("georgeforge") or apps.is_installed("georgeforge")
+    return apps.is_installed("georgeforge")
 
 
 def corptools_installed():
