@@ -33,6 +33,7 @@ dependencies = [
     "allianceauth>=5,<6",
     "allianceauth-corptools>=3.3",
     "allianceauth-invoices>=0.1.9",
+    "requests>=2.20",
 ]
 
 [project.optional-dependencies]

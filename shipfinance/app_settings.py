@@ -94,6 +94,14 @@ SHIPFINANCE_SEND_DISCORD_NOTIFICATIONS = getattr(
     settings, "SHIPFINANCE_SEND_DISCORD_NOTIFICATIONS", True
 )
 
+# Discord webhook URL for admin activity logging. When set, the plugin posts
+# events (rentals, returns, finances, defaults, etc.) to this Discord channel
+# so admins can monitor activity. Set to None/empty to disable.
+# Example: SHIPFINANCE_ADMIN_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/123/abc"
+SHIPFINANCE_ADMIN_DISCORD_WEBHOOK = getattr(
+    settings, "SHIPFINANCE_ADMIN_DISCORD_WEBHOOK", None
+)
+
 
 def invoices_installed():
     """True if the allianceauth-invoices app is installed (required dependency)."""

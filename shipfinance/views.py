@@ -182,6 +182,11 @@ def rent_ship(request, fit_id):
             "RENTAL_CREATED", performed_by=request.user,
             rental_agreement=rental, ship_stock=stock,
             detail=f"Rental {rental.id} created for {fit.name}")
+        helpers.notify_admin_webhook(
+            "rental_created", "Rental Created",
+            f"Rental #{rental.id}: {fit.name} rented by {request.user.username}. "
+            f"Fee: {fee} ISK, due {due:%Y-%m-%d %H:%M}.",
+            member=request.user)
 
         messages.success(
             request,
@@ -275,6 +280,13 @@ def finance_ship(request, offer_id):
             finance_agreement=fa, ship_stock=stock,
             detail=f"Finance {fa.id} created for {offer.doctrine_fit.name}, "
                    f"{offer.term_months} months, insurance={buy_insurance}")
+        helpers.notify_admin_webhook(
+            "finance_created", "Finance Created",
+            f"Finance #{fa.id}: {offer.doctrine_fit.name} financed by "
+            f"{request.user.username}. {offer.term_months} months, "
+            f"monthly {fa.monthly_payment} ISK, total {fa.total_amount} ISK. "
+            f"Insurance: {'yes' if buy_insurance else 'no'}.",
+            member=request.user)
 
         messages.success(
             request,
@@ -365,6 +377,14 @@ def finance_georgeforge_deposit(request, order_id):
         messages.error(request, "This order is not available for installments.")
         return redirect("shipfinance:georgeforge_orders")
 
+    if order.deposit <= 0:
+        messages.error(
+            request,
+            "This order doesn't have a deposit set. Installment plans require a "
+            "deposit on the GeorgeForge item — the deposit is what holds the order "
+            "until your installments are paid off. Ask an admin to set a deposit.")
+        return redirect("shipfinance:georgeforge_orders")
+
     # Check if already financed
     existing = FinanceAgreement.objects.filter(
         georgeforge_order_id=order_id).exclude(
@@ -445,6 +465,13 @@ def finance_georgeforge_deposit(request, order_id):
             finance_agreement=fa,
             detail=f"Installment plan {fa.id} created for GF order #{order_id}, "
                    f"full cost {order_total} ISK over {offer.term_months} months")
+        helpers.notify_admin_webhook(
+            "gf_installment_created", "GF Installment Plan Created",
+            f"Finance #{fa.id}: GeorgeForge order #{order_id} "
+            f"({order.eve_type.name if order.eve_type else 'Unknown'} x{order.quantity}) "
+            f"financed by {request.user.username}. Full cost {order_total} ISK "
+            f"over {offer.term_months} months, monthly {monthly} ISK.",
+            member=request.user)
 
         messages.success(
             request,

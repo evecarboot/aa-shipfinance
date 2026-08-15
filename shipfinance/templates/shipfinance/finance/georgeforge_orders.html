@@ -8,6 +8,17 @@
     {% trans "Split the full cost of your GeorgeForge ship orders into monthly payments. The ship gets built once you've paid it off completely." %}
   </p>
 
+  <div class="alert alert-secondary mb-4">
+    <small>
+      {% blocktrans %}
+      <strong>Note:</strong> Installment plans only work for orders with a deposit.
+      The deposit holds the order until your installments are paid off — without it,
+      GeorgeForge would build the ship immediately. If you don't see your order here,
+      it may not have a deposit set. Ask an admin.
+      {% endblocktrans %}
+    </small>
+  </div>
+
   {% if orders %}
   <div class="card shadow-sm">
     <div class="card-body p-0">
@@ -39,7 +50,7 @@
   </div>
   {% else %}
   <div class="alert alert-info">
-    {% trans "No GeorgeForge orders available for installment plans. Place an order in GeorgeForge first, then come back here to split the cost into monthly payments." %}
+    {% trans "No GeorgeForge orders with a deposit are available for installment plans. Place an order for an item with a deposit in GeorgeForge first, then come back here." %}
   </div>
   {% endif %}
 

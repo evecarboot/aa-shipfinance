@@ -43,22 +43,39 @@ Two ways to rent ships to members:
 
 If [allianceauth-georgeforge](https://pypi.org/project/allianceauth-georgeforge/) is installed, members can **split the full cost of their GeorgeForge ship orders into monthly installments** instead of paying upfront.
 
-GeorgeForge is a card builder tool where admins list ships with prices and optional deposits. Normally members pay upfront at checkout. With this plugin, members can instead:
+GeorgeForge is a card builder tool where admins list ships with prices and optional deposits. Members place orders and normally pay upfront at checkout. With this plugin, members can instead split the **full order cost** into monthly installments:
 
-1. Place an order in GeorgeForge (order status = Awaiting Deposit)
-2. Come to this plugin and select "GeorgeForge Installment Plans"
-3. Choose a payment plan (term + interest rate) and acknowledge terms
-4. The original GeorgeForge deposit invoice is cancelled
-5. This plugin creates monthly installment invoices via the invoices plugin for the **full order cost** (including any deposit)
-6. When all installments are paid, the GeorgeForge order automatically advances to "Deposit Received" and the ship gets built
-7. The member receives the ship from GeorgeForge when it's delivered
+1. **Admin sets a deposit on the GF item** — the deposit is required because it's the gate that holds the order (see below)
+2. Member places an order in GeorgeForge → order status = Awaiting Deposit
+3. Member comes to this plugin → "GeorgeForge Installment Plans"
+4. Member picks a payment plan (term + interest rate) and acknowledges terms
+5. The original GF deposit invoice is cancelled
+6. This plugin creates monthly installment invoices for the **full order cost** (including the deposit)
+7. When all installments are paid → the GF order advances to "Deposit Received" and the ship gets built
+8. The member receives the ship from GeorgeForge when it's delivered — **no final payment needed** (it's all covered by the installments)
 
-The ship is only built once the full order cost is paid off through installments. If the order has a deposit, it's just part of the total being financed — the member pays everything off in installments, then the ship gets built.
+#### Why a deposit is required
+
+GeorgeForge's order flow is:
+
+```
+Pending → Awaiting Deposit → Deposit Received → Building → Contract Up (final payment) → Delivered
+```
+
+If a GF item has **no deposit**, GF skips "Awaiting Deposit" and goes straight to building — there's no way to hold the order back. The member would normally pay at the "Contract Up" stage after the ship is built.
+
+**The deposit is the gate.** When we finance an order via installments:
+- We cancel the deposit invoice (we handle all payment)
+- The order stays in "Awaiting Deposit" until the installment plan is paid off
+- When paid off, we set `order.paid = totalcost` (so GF knows it's fully paid) and advance to "Deposit Received"
+- GF builds the ship and delivers it — no final payment needed
+
+If an admin wants to offer installment plans on a GF item, they must set a deposit on it (even a small one). Without a deposit, the order isn't eligible for installment plans.
 
 ### Trust model
 
 - **Request-only access group**: admins curate who can use the plugin
-- **No-overdue secure group filter**: members with overdue invoices auto-lose access (`NoOverdueShipFinanceFilter`)
+- **Secure groups integration**: use [allianceauth-securegroups](https://github.com/Solar-Helix-Independent-Transport/allianceauth-secure-groups) with the [invoices plugin](https://github.com/Solar-Helix-Independent-Transport/allianceauth-invoice-manager)'s built-in "No Overdue Invoices" filter to auto-lockout members with overdue invoices. No custom filter needed — ship finance invoices are regular invoices, so the invoices plugin's filter covers them out of the box
 - **Admin-managed defaults**: no automatic kicks. Admins decide how to handle arrears, losses, and defaults per case
 - **Audit log**: every state change is logged for dispute resolution
 
@@ -155,10 +172,38 @@ SHIPFINANCE_ASSET_POLL_MINUTES = 60
 # Enable zKillboard API fallback for destroyed-ship detection
 SHIPFINANCE_ZKILL_FALLBACK = True
 
-# Notifications
+# Notifications to members (Auth bell icon + Discord DMs via aadiscordbot)
 SHIPFINANCE_SEND_AUTH_NOTIFICATIONS = True
 SHIPFINANCE_SEND_DISCORD_NOTIFICATIONS = True
+
+# Admin activity webhook — posts events to a shared Discord channel so admins
+# can monitor rentals, returns, finances, defaults, etc.
+# Create a webhook in your Discord admin channel and paste the URL here.
+# Set to None or omit to disable.
+SHIPFINANCE_ADMIN_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/123/abc"
 ```
+
+### Notifications
+
+The plugin sends two types of notifications:
+
+**Member notifications** (when `SHIPFINANCE_SEND_AUTH_NOTIFICATIONS` / `SHIPFINANCE_SEND_DISCORD_NOTIFICATIONS` are True):
+- Auth site notifications (the bell icon) — always available
+- Discord DMs to the member — requires `aadiscordbot` v3+ installed and the member has a linked EVE character
+- Events: rental started, ship returned + billed, ship destroyed, finance paid off, finance defaulted, rental overdue
+
+**Admin webhook** (when `SHIPFINANCE_ADMIN_DISCORD_WEBHOOK` is set to a Discord channel webhook URL):
+- Posts all plugin activity to a shared Discord channel for admin monitoring
+- No aadiscordbot required — just a standard Discord webhook
+- Events posted: rental created, rental returned, rental overdue, rental destroyed, rental lost, finance created, finance paid off, finance defaulted, finance destroyed, finance lost, GF installment plan created, GF installment plan paid off
+- Each post includes the event type, member name, and details
+- Color-coded by event type (blue=rental, purple=finance, orange=GF, green=completed, red=destroyed/defaulted, gray=lost)
+
+To set up the admin webhook:
+1. In Discord, go to the channel you want to use for admin alerts
+2. Channel Settings → Integrations → Webhooks → New Webhook
+3. Copy the webhook URL
+4. Add to your `local.py`: `SHIPFINANCE_ADMIN_DISCORD_WEBHOOK = "https://discord.com/api/webhooks/..."`
 
 ---
 
@@ -171,7 +216,7 @@ SHIPFINANCE_SEND_DISCORD_NOTIFICATIONS = True
 | `shipfinance.use_rent` | Member: can rent ships |
 | `shipfinance.use_finance` | Member: can finance ships |
 
-Assign `access_shipfinance` + `use_rent`/`use_finance` to your trusted request-only group. Attach the `NoOverdueShipFinanceFilter` secure group filter to auto-lockout members with overdue invoices.
+Assign `access_shipfinance` + `use_rent`/`use_finance` to your trusted request-only group. If you use [allianceauth-securegroups](https://github.com/Solar-Helix-Independent-Transport/allianceauth-secure-groups), add the invoices plugin's "No Overdue Invoices" filter to auto-lockout members with overdue invoices.
 
 ---
 
@@ -232,7 +277,7 @@ If a rented/financed ship is no longer in the corp hangar or the member's assets
 This plugin is designed for **trusted, request-only groups**. It is not a theft-detection or enforcement system. Specifically:
 
 - **No theft detection**: if a trusted member sells/contracts a rented ship to an alt, the plugin reports "not returned" and an admin decides what to do.
-- **No automatic kicks**: arrears flag the account via the `NoOverdueShipFinanceFilter`, but removing the member is an admin decision.
+- **No automatic kicks**: arrears can flag the account via secure groups + the invoices plugin's overdue filter, but removing the member is an admin decision.
 - **No role automation**: the plugin does not manage EVE corp roles. Admins grant/revoke hangar access manually.
 - **Admin-managed defaults**: when a member stops paying or a ship goes missing, admin actions (`mark_defaulted`, `mark_lost`, `mark_destroyed`) handle it case by case.
 
@@ -248,14 +293,14 @@ GeorgeForge is a card builder tool where admins list ships with prices and optio
 
 1. Member places an order in GeorgeForge → order status = Awaiting Deposit
 2. Member visits this plugin → "GeorgeForge Installment Plans"
-3. Member sees their GF orders awaiting payment
+3. Member sees their GF orders with deposits awaiting payment
 4. Member picks a payment plan (term + interest rate from your configured finance offers)
 5. The original GF deposit invoice is cancelled
-6. This plugin creates monthly installment invoices for the full order cost (including any deposit)
-7. When all installments are paid → the GF order automatically advances to "Deposit Received" and the ship gets built
-8. GeorgeForge continues its normal build/delivery flow → member gets the ship when it's delivered
+6. This plugin creates monthly installment invoices for the full order cost (including the deposit)
+7. When all installments are paid → the GF order advances to "Deposit Received" and the ship gets built
+8. GeorgeForge builds and delivers the ship — no final payment needed (already paid via installments)
 
-The ship is only built once the full order cost is paid off. If the order has a deposit, it's just part of the total — the member pays everything off in installments, then the ship gets built.
+**A deposit is required** on the GF item for installment plans to work. The deposit is the gate that holds the order in "Awaiting Deposit" status until the installments are paid off. Without a deposit, GF skips straight to building and there's no way to hold the order. When the installment plan is paid off, we set `order.paid = totalcost` so GF knows the full amount is covered.
 
 If GeorgeForge is not installed, this feature is simply not available — no errors, no broken behavior.
 
@@ -296,7 +341,7 @@ shipfinance/
   views.py                        # member + admin views
   urls.py                         # URL routing
   admin.py                        # Django admin registration
-  auth_hooks.py                   # menu item, URL hook, secure group filter
+  auth_hooks.py                   # menu item, URL hook
   migrations/
   templates/shipfinance/          # Bootstrap 5 templates
   templatetags/

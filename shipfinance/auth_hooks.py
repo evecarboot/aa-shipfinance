@@ -31,9 +31,3 @@ def register_menu():
 @hooks.register("url_hook")
 def register_url():
     return UrlHook(urls, "shipfinance", r"^shipfinance/")
-
-
-@hooks.register("secure_group_filters")
-def filters():
-    from .models import NoOverdueShipFinanceFilter
-    return [NoOverdueShipFinanceFilter]

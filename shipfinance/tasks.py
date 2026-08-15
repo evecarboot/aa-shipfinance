@@ -501,6 +501,12 @@ def detect_free_use_taken(self):
                 f"{fit.free_use_billing_period}. Return it to {return_hint} "
                 f"to stop billing.",
                 eve_character=character)
+            helpers.notify_admin_webhook(
+                "rental_created", "Self-Service Rental Started",
+                f"Rental #{rental.id}: {user.username} took a {fit.name} "
+                f"from {stock.location_name or stock.location_id}. "
+                f"Rate: {fit.free_use_rate} ISK/{fit.free_use_billing_period}.",
+                member=user)
 
             logger.info(f"Rental {rental.id} auto-created for {user}")
 
@@ -575,6 +581,11 @@ def check_rental_returns(self):
                     f"Your rental of {stock.doctrine_fit.name} is overdue. "
                     f"Please return it to the corp hangar.",
                     eve_character=rental.member_character)
+                helpers.notify_admin_webhook(
+                    "rental_overdue", "Rental Overdue",
+                    f"Rental #{rental.id}: {stock.doctrine_fit.name} overdue "
+                    f"(due {rental.due_date}). Member: {rental.member.username}",
+                    member=rental.member)
 
 
 @shared_task(bind=True, base=QueueOnce)

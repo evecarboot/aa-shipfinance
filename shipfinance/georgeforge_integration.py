@@ -8,19 +8,32 @@ Instead of paying the full price upfront, a member can split the total order
 cost into monthly installments through this plugin. The GeorgeForge order
 only advances to building once the installments are fully paid off here.
 
-If the order has a deposit, it's just part of the total being financed —
-the member pays everything off in installments, then the ship gets built.
+IMPORTANT — the deposit is the gate:
+GeorgeForge's order flow is:
+  PENDING → AWAITING_DEPOSIT → DEPOSIT_RECIEVED → BUILDING → AWAITING_FINAL_PAYMENT → DELIVERED
+
+If a GF item has NO deposit, GF skips AWAITING_DEPOSIT and goes straight to
+building — there's no way to hold the order back. So installment plans only
+work when the GF item has a deposit > 0. The deposit acts as the gate:
+we cancel the deposit invoice, hold the order in AWAITING_DEPOSIT, and only
+advance to DEPOSIT_RECIEVED when the installment plan is fully paid off.
+
+When the installment plan is paid off, we also set order.paid = order.totalcost
+so GF knows the full amount has been paid — no final payment is needed at the
+contract stage.
 
 Flow:
-1. Member places an order in GeorgeForge (status = AWAITING_DEPOSIT)
-2. Member comes to this plugin and sees their GeorgeForge orders
-3. Member clicks "Pay in Installments"
-4. This plugin creates a FinanceAgreement for the full order cost, split into
+1. Admin creates a GF item with a deposit (the gate)
+2. Member places an order in GeorgeForge (status = AWAITING_DEPOSIT)
+3. Member comes to this plugin and sees their GeorgeForge orders
+4. Member clicks "Pay in Installments"
+5. This plugin creates a FinanceAgreement for the full order cost, split into
    monthly installments
-5. Member pays installments via Alliance Auth invoices
-6. When all installments are paid → mark the GeorgeForge order as DEPOSIT_RECIEVED
-   so GeorgeForge proceeds to building
-7. GeorgeForge continues its normal flow (build, delivery)
+6. The original GF deposit invoice is cancelled (we handle all payment)
+7. Member pays installments via Alliance Auth invoices
+8. When all installments are paid → set order.paid = totalcost and advance
+   to DEPOSIT_RECIEVED so GeorgeForge proceeds to building
+9. GeorgeForge builds and delivers — no final payment needed (already paid)
 
 This module is imported lazily and guarded by app_settings.georgeforge_installed()
 so it never breaks if GeorgeForge is absent.
@@ -44,8 +57,11 @@ def get_member_orders(user):
     Returns a list of dicts with order info suitable for display:
     [{id, type_name, quantity, totalcost, deposit, status, status_display}, ...]
 
-    Only returns orders in AWAITING_DEPOSIT status that don't already have
-    a finance agreement from this plugin.
+    Only returns orders that:
+    - Are in AWAITING_DEPOSIT status (the gate exists)
+    - Have deposit > 0 (without a deposit, GF skips straight to building
+      and there's no way to hold the order for installments)
+    - Don't already have a finance agreement from this plugin
     """
     if not is_available():
         return []
@@ -53,10 +69,12 @@ def get_member_orders(user):
         from georgeforge.models import Order
         from .models import FinanceAgreement
 
-        # Orders awaiting deposit payment (the start of the GF payment flow)
+        # Only orders with a deposit — the deposit is the gate that lets us
+        # hold the order until installments are paid off.
         orders = Order.objects.filter(
             user=user,
             status=Order.OrderStatus.AWAITING_DEPOSIT,
+            deposit__gt=0,
         ).select_related("eve_type")
 
         # Exclude orders that already have a finance agreement
@@ -99,8 +117,9 @@ def mark_order_ready_to_build(order_id):
     """Mark a GeorgeForge order as ready to build (deposit received).
 
     Called when a FinanceAgreement for this order is fully paid off.
-    Sets the order status to DEPOSIT_RECIEVED so GeorgeForge continues
-    its normal build/delivery flow.
+    Sets order.paid = order.totalcost (so GF knows the full amount is paid
+    and doesn't expect a final payment at contract stage), then sets the
+    order status to DEPOSIT_RECIEVED so GeorgeForge proceeds to building.
 
     Returns True on success, False on failure.
     """
@@ -110,12 +129,13 @@ def mark_order_ready_to_build(order_id):
     try:
         from georgeforge.models import Order
         order = Order.objects.get(pk=order_id)
-        if order.status != Order.OrderStatus.DEPOSIT_RECIEVED:
-            order.status = Order.OrderStatus.DEPOSIT_RECIEVED
-            order.save()
-            logger.info(
-                f"GeorgeForge order {order_id} marked as DEPOSIT_RECIEVED "
-                f"(installment plan paid off — ready to build)")
+        # Mark the full amount as paid so GF doesn't expect a final payment
+        order.paid = order.totalcost
+        order.status = Order.OrderStatus.DEPOSIT_RECIEVED
+        order.save()
+        logger.info(
+            f"GeorgeForge order {order_id} marked as DEPOSIT_RECIEVED "
+            f"(installment plan paid off — ready to build, paid={order.paid})")
         return True
     except Exception as e:
         logger.error(

@@ -7,7 +7,6 @@ from .models import (
     FinanceInstallment,
     FinanceOffer,
     FreeUseHangar,
-    NoOverdueShipFinanceFilter,
     RentalAgreement,
     ShipStock,
 )
@@ -80,4 +79,4 @@ class AuditLogAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at",)
 
 
-admin.site.register(NoOverdueShipFinanceFilter)
+

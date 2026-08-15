@@ -1,9 +1,11 @@
 """Helper logic: interest calculation, insurance, invoice creation, notifications."""
+import json
 import logging
 import secrets
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
+import requests
 from django.utils import timezone
 
 from . import app_settings
@@ -223,6 +225,69 @@ def notify_member(member, title, message, eve_character=None):
             logger.error(f"Discord notify failed: {e}")
 
 
+# Admin webhook colors by event type
+_WEBHOOK_COLORS = {
+    "rental_created": 0x3498db,      # blue
+    "rental_returned": 0x2ecc71,     # green
+    "rental_overdue": 0xe74c3c,      # red
+    "rental_destroyed": 0xe74c3c,    # red
+    "rental_lost": 0x95a5a6,         # gray
+    "finance_created": 0x9b59b6,     # purple
+    "finance_paid_off": 0x2ecc71,    # green
+    "finance_defaulted": 0xe74c3c,   # red
+    "finance_destroyed": 0xe74c3c,   # red
+    "finance_lost": 0x95a5a6,        # gray
+    "gf_installment_created": 0xf39c12,  # orange
+    "gf_installment_paid_off": 0x2ecc71, # green
+}
+
+
+def notify_admin_webhook(event_type, title, detail, member=None):
+    """Post an event to the admin Discord webhook channel.
+
+    This is for admin monitoring — a shared Discord channel where admins can
+    see all plugin activity (rentals, returns, finances, defaults, etc.).
+
+    Set SHIPFINANCE_ADMIN_DISCORD_WEBHOOK in local.py to a Discord channel
+    webhook URL to enable. If not set or empty, this is a no-op.
+
+    Args:
+        event_type: one of the keys in _WEBHOOK_COLORS (controls embed color)
+        title: short title for the embed
+        detail: message body (string)
+        member: optional User object, shown as "Member: <username>"
+    """
+    webhook_url = app_settings.SHIPFINANCE_ADMIN_DISCORD_WEBHOOK
+    if not webhook_url:
+        return
+    try:
+        color = _WEBHOOK_COLORS.get(event_type, 0x3498db)
+        fields = [{"name": "Event", "value": event_type, "inline": True}]
+        if member:
+            fields.append({
+                "name": "Member", "value": member.username, "inline": True})
+        fields.append({"name": "Details", "value": detail[:1024], "inline": False})
+
+        payload = {
+            "embeds": [{
+                "title": title,
+                "color": color,
+                "fields": fields,
+                "timestamp": timezone.now().isoformat(),
+            }],
+        }
+        resp = requests.post(
+            webhook_url, json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=10,
+        )
+        if resp.status_code not in (200, 204):
+            logger.warning(
+                f"Admin webhook returned {resp.status_code}: {resp.text[:200]}")
+    except Exception as e:
+        logger.error(f"Admin webhook failed: {e}", exc_info=True)
+
+
 # ---------------------------------------------------------------------------
 # State transitions
 # ---------------------------------------------------------------------------
@@ -244,6 +309,7 @@ def mark_ship_returned(rental, performed_by=None):
     rental.save()
 
     # For free-use rentals, bill for actual time used
+    fee = Decimal("0")
     if rental.delivery_mode == DeliveryMode.FREE_USE and rental.invoice_id is None:
         duration = now - rental.start_time
         fee = compute_rental_fee(
@@ -275,6 +341,13 @@ def mark_ship_returned(rental, performed_by=None):
            if rental.delivery_mode == DeliveryMode.FREE_USE and fee > 0
            else "Thank you!"),
         eve_character=rental.member_character)
+    webhook_detail = f"Rental #{rental.id}: {stock.doctrine_fit.name} returned by {rental.member.username}"
+    if rental.delivery_mode == DeliveryMode.FREE_USE and fee > 0:
+        webhook_detail += f" — billed {fee} ISK for {rental.duration_display}"
+    notify_admin_webhook(
+        "rental_returned", "Rental Returned",
+        webhook_detail,
+        member=rental.member)
 
 
 def mark_ship_destroyed(rental_or_finance, is_finance, performed_by=None,
@@ -321,6 +394,12 @@ def mark_ship_destroyed(rental_or_finance, is_finance, performed_by=None,
             + ("Insurance is settling your remaining balance." if fa.insurance_purchased
                else "You still owe the remaining balance per your finance agreement."),
             eve_character=fa.member_character)
+        notify_admin_webhook(
+            "finance_destroyed", "Financed Ship Destroyed",
+            f"Finance #{fa.id}: {stock.doctrine_fit.name} destroyed. "
+            f"Insurance: {'yes' if fa.insurance_purchased else 'no'}. "
+            f"Killmail: {killmail_url or 'n/a'}",
+            member=fa.member)
     else:
         rental = rental_or_finance
         stock = rental.ship_stock
@@ -336,6 +415,11 @@ def mark_ship_destroyed(rental_or_finance, is_finance, performed_by=None,
             f"Your rented {stock.doctrine_fit.name} has been reported destroyed. "
             "Rental closed.",
             eve_character=rental.member_character)
+        notify_admin_webhook(
+            "rental_destroyed", "Rented Ship Destroyed",
+            f"Rental #{rental.id}: {stock.doctrine_fit.name} destroyed. "
+            f"Killmail: {killmail_url or 'n/a'}",
+            member=rental.member)
 
 
 def mark_ship_lost(rental_or_finance, is_finance, performed_by=None):
@@ -350,6 +434,11 @@ def mark_ship_lost(rental_or_finance, is_finance, performed_by=None):
         log_action("SHIP_LOST", performed_by=performed_by,
                    finance_agreement=fa, ship_stock=stock,
                    detail=f"Finance {fa.id} ship lost/unaccounted. Admin review needed.")
+        notify_admin_webhook(
+            "finance_lost", "Financed Ship Lost",
+            f"Finance #{fa.id}: {stock.doctrine_fit.name} lost/unaccounted. "
+            f"Admin review needed.",
+            member=fa.member)
     else:
         rental = rental_or_finance
         stock = rental.ship_stock
@@ -360,6 +449,11 @@ def mark_ship_lost(rental_or_finance, is_finance, performed_by=None):
         log_action("SHIP_LOST", performed_by=performed_by,
                    rental_agreement=rental, ship_stock=stock,
                    detail=f"Rental {rental.id} ship lost/unaccounted. Admin review needed.")
+        notify_admin_webhook(
+            "rental_lost", "Rented Ship Lost",
+            f"Rental #{rental.id}: {stock.doctrine_fit.name} lost/unaccounted. "
+            f"Admin review needed.",
+            member=rental.member)
 
 
 def mark_finance_paid_off(fa, performed_by=None):
@@ -382,6 +476,11 @@ def mark_finance_paid_off(fa, performed_by=None):
             f"({fa.georgeforge_item_name}). The ship will now be built. "
             f"Watch for delivery from GeorgeForge.",
             eve_character=fa.member_character)
+        notify_admin_webhook(
+            "gf_installment_paid_off", "GF Installment Plan Paid Off",
+            f"Finance #{fa.id}: GeorgeForge order #{fa.georgeforge_order_id} "
+            f"({fa.georgeforge_item_name}) fully paid off. Ship ready to build.",
+            member=fa.member)
     else:
         stock = fa.ship_stock
         if stock:
@@ -395,6 +494,11 @@ def mark_finance_paid_off(fa, performed_by=None):
             f"Congratulations! You've paid off your {stock.doctrine_fit.name if stock else 'ship'}. "
             "The ship is now yours.",
             eve_character=fa.member_character)
+        notify_admin_webhook(
+            "finance_paid_off", "Finance Paid Off",
+            f"Finance #{fa.id}: {stock.doctrine_fit.name if stock else 'ship'} "
+            f"paid off by {fa.member.username}. Ship now owned by member.",
+            member=fa.member)
 
 
 def mark_finance_defaulted(fa, performed_by=None, detail=""):
@@ -403,8 +507,13 @@ def mark_finance_defaulted(fa, performed_by=None, detail=""):
     fa.save()
     log_action("FINANCE_DEFAULTED", performed_by=performed_by,
                finance_agreement=fa, detail=detail or f"Finance {fa.id} defaulted by admin")
+    item_name = fa.item_display_name
     notify_member(
         fa.member, "Finance Defaulted",
-        f"Your finance agreement for {fa.ship_stock.doctrine_fit.name} has been "
+        f"Your finance agreement for {item_name} has been "
         "marked as defaulted. Please contact a director.",
         eve_character=fa.member_character)
+    notify_admin_webhook(
+        "finance_defaulted", "Finance Defaulted",
+        f"Finance #{fa.id}: {item_name} defaulted. {detail or 'Marked by admin.'}",
+        member=fa.member)
