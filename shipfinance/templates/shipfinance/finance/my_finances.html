@@ -5,11 +5,18 @@
   {% include "shipfinance/partials/messages.html" %}
   <div class="d-flex justify-content-between align-items-center mb-4">
     <h1 class="mb-0">{% trans "My Finances" %}</h1>
-    {% if georgeforge_available %}
-    <a href="{% url 'shipfinance:georgeforge_orders' %}" class="btn btn-outline-primary btn-sm">
-      <i class="fas fa-industry me-1"></i>{% trans "GeorgeForge Installments" %}
-    </a>
-    {% endif %}
+    <div>
+      {% if georgeforge_available %}
+      <a href="{% url 'shipfinance:georgeforge_orders' %}" class="btn btn-outline-primary btn-sm">
+        <i class="fas fa-industry me-1"></i>{% trans "GeorgeForge Installments" %}
+      </a>
+      {% endif %}
+      {% if aashop_available %}
+      <a href="{% url 'shipfinance:aashop_orders' %}" class="btn btn-outline-primary btn-sm">
+        <i class="fas fa-shopping-cart me-1"></i>{% trans "Shop Installments" %}
+      </a>
+      {% endif %}
+    </div>
   </div>
 
   <div class="card shadow-sm mb-4">
@@ -25,6 +32,7 @@
               <td>
                 {{ f.item_display_name }}
                 {% if f.is_georgeforge %}<span class="badge bg-info">GF Installments</span>{% endif %}
+                {% if f.is_aashop %}<span class="badge bg-secondary">Shop Installments</span>{% endif %}
               </td>
               <td>{{ f.principal }} ISK</td>
               <td>{{ f.monthly_payment }} ISK</td>

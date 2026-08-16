@@ -438,7 +438,7 @@ class FinanceOffer(models.Model):
 
 
 class FinanceAgreement(models.Model):
-    """One finance: a member pays installments for a ship or GeorgeForge deposit.
+    """One finance: a member pays installments for a ship or external order.
 
     For normal ship finance: finance_offer and ship_stock are set, the member
     gets the ship up front and pays monthly installments.
@@ -448,6 +448,12 @@ class FinanceAgreement(models.Model):
     cost (including any deposit) into monthly installments. The GF order only
     advances to DEPOSIT_RECIEVED (ready to build) when this finance is fully
     paid off. The member gets the ship from GeorgeForge when it's delivered.
+
+    For aa-shop installment plans: finance_offer and ship_stock are null,
+    aashop_order_id is set. The member splits the aa-shop order total into
+    monthly installments. aa-shop has no payment gate, so the shop owner is
+    notified via webhook to hold the order until installments are paid off.
+    When paid off, the shop owner is notified to proceed with the contract.
     """
 
     finance_offer = models.ForeignKey(
@@ -469,6 +475,17 @@ class FinanceAgreement(models.Model):
     georgeforge_item_name = models.CharField(
         max_length=200, blank=True, default="",
         help_text="Item name from the GeorgeForge order (for display).")
+
+    # aa-shop installment plan: the shop order being financed (null for normal ship finance)
+    aashop_order_id = models.BigIntegerField(
+        null=True, blank=True,
+        help_text="aa-shop order ID if this is an installment plan for a shop order.")
+    aashop_order_reference = models.CharField(
+        max_length=10, blank=True, default="",
+        help_text="aa-shop order reference (e.g. ABC12) for display.")
+    aashop_item_summary = models.CharField(
+        max_length=200, blank=True, default="",
+        help_text="Item summary from the aa-shop order (for display).")
 
     # Snapshot of offer terms at acceptance (so later offer edits don't
     # change active agreements).
@@ -513,6 +530,8 @@ class FinanceAgreement(models.Model):
     def __str__(self):
         if self.georgeforge_order_id:
             return f"Finance {self.id}: GF Order #{self.georgeforge_order_id} -> {self.member}"
+        if self.aashop_order_id:
+            return f"Finance {self.id}: Shop Order #{self.aashop_order_reference} -> {self.member}"
         if self.ship_stock:
             return f"Finance {self.id}: {self.ship_stock.doctrine_fit.name} -> {self.member}"
         return f"Finance {self.id} -> {self.member}"
@@ -522,10 +541,16 @@ class FinanceAgreement(models.Model):
         return self.georgeforge_order_id is not None
 
     @property
+    def is_aashop(self):
+        return self.aashop_order_id is not None
+
+    @property
     def item_display_name(self):
         """Human-readable name for what's being financed."""
         if self.is_georgeforge:
             return self.georgeforge_item_name or f"GF Order #{self.georgeforge_order_id}"
+        if self.is_aashop:
+            return self.aashop_item_summary or f"Shop Order #{self.aashop_order_reference}"
         if self.ship_stock:
             return self.ship_stock.doctrine_fit.name
         return "Unknown"

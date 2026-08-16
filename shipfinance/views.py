@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from . import app_settings, helpers
 from . import georgeforge_integration
+from . import aashop_integration
 from .models import (
     BillingPeriod,
     DeliveryMode,
@@ -50,6 +51,7 @@ def index(request):
         "can_finance": request.user.has_perm("shipfinance.use_finance"),
         "can_manage": request.user.has_perm("shipfinance.manage_shipfinance"),
         "georgeforge_available": app_settings.georgeforge_installed(),
+        "aashop_available": app_settings.aashop_installed(),
     }
     return render(request, "shipfinance/index.html", ctx)
 
@@ -324,6 +326,7 @@ def my_finances(request):
     ctx = {
         "finances": finances,
         "georgeforge_available": app_settings.georgeforge_installed(),
+        "aashop_available": app_settings.aashop_installed(),
     }
     return render(request, "shipfinance/finance/my_finances.html", ctx)
 
@@ -491,9 +494,180 @@ def finance_georgeforge_deposit(request, order_id):
 
 
 # ---------------------------------------------------------------------------
-# Admin: dashboard
+# aa-shop installment plans: finance a shop order in installments
 # ---------------------------------------------------------------------------
 
+@login_required
+@permission_required("shipfinance.access_shipfinance")
+def aashop_orders(request):
+    """List the member's aa-shop orders that can be financed via installments."""
+    if not app_settings.aashop_installed():
+        messages.error(request, "aa-shop is not installed.")
+        return redirect("shipfinance:index")
+
+    orders = aashop_integration.get_member_orders(request.user)
+    ctx = {"orders": orders}
+    return render(request, "shipfinance/finance/aashop_orders.html", ctx)
+
+
+@login_required
+@permission_required("shipfinance.access_shipfinance")
+def finance_aashop_order(request, order_id):
+    """Split an aa-shop order's total into monthly installments.
+
+    aa-shop has no payment gate, so the shop owner is notified via webhook
+    to hold the order until installments are paid off. When paid off, the
+    shop owner is notified to proceed with the contract.
+    """
+    if not app_settings.aashop_installed():
+        messages.error(request, "aa-shop is not installed.")
+        return redirect("shipfinance:index")
+
+    if not app_settings.invoices_installed():
+        messages.error(request, "The invoices plugin is required for financing.")
+        return redirect("shipfinance:aashop_orders")
+
+    order = aashop_integration.get_order(order_id)
+    if order is None:
+        messages.error(request, "aa-shop order not found.")
+        return redirect("shipfinance:aashop_orders")
+
+    # Verify this order belongs to the requesting user
+    buyer_user = aashop_integration.get_buyer_user(order)
+    if buyer_user is None or buyer_user.id != request.user.id:
+        messages.error(request, "You can only finance your own orders.")
+        return redirect("shipfinance:aashop_orders")
+
+    if order.status != "pending":
+        messages.error(request, "This order is not available for installments.")
+        return redirect("shipfinance:aashop_orders")
+
+    # Check if already financed
+    existing = FinanceAgreement.objects.filter(
+        aashop_order_id=order_id).exclude(
+        status=FinanceStatus.DEFAULTED).first()
+    if existing:
+        messages.error(request, f"This order already has an installment plan (Finance #{existing.id}).")
+        return redirect("shipfinance:my_finances")
+
+    order_total = Decimal(str(order.estimated_total))
+    if order_total <= 0:
+        messages.error(request, "This order has no fixed price (it may be 'Ask' — negotiate with the shop owner first).")
+        return redirect("shipfinance:aashop_orders")
+
+    # Build item summary
+    lines = list(order.lines.all())
+    if lines:
+        item_summary = ", ".join(
+            f"{ln.quantity}x {ln.eve_type.name}" for ln in lines[:3])
+        if len(lines) > 3:
+            item_summary += f" +{len(lines) - 3} more"
+    else:
+        item_summary = "Unknown items"
+
+    # Get available finance terms
+    offers = FinanceOffer.objects.filter(active=True).order_by("term_months")
+    if not offers.exists():
+        messages.error(request, "No finance offers configured. Ask an admin.")
+        return redirect("shipfinance:aashop_orders")
+
+    if request.method == "POST":
+        offer_id = request.POST.get("offer_id")
+        acknowledge = request.POST.get("acknowledge") == "on"
+
+        if not acknowledge:
+            messages.error(request, "You must acknowledge the terms to finance.")
+            return redirect(request.path)
+
+        offer = get_object_or_404(FinanceOffer, pk=offer_id, active=True)
+
+        char = _get_main_character(request.user)
+        if char is None:
+            messages.error(request, "You need a main character set to finance.")
+            return redirect(request.path)
+
+        total = helpers.compute_finance_total(
+            order_total, offer.interest_rate, offer.interest_type, offer.term_months)
+        monthly = helpers.compute_monthly_payment(total, offer.term_months)
+
+        now = timezone.now()
+
+        fa = FinanceAgreement.objects.create(
+            finance_offer=offer,
+            ship_stock=None,
+            member=request.user,
+            member_character=char,
+            aashop_order_id=order_id,
+            aashop_order_reference=order.reference,
+            aashop_item_summary=item_summary,
+            principal=order_total,
+            term_months=offer.term_months,
+            interest_type=offer.interest_type,
+            interest_rate=offer.interest_rate,
+            total_amount=total,
+            monthly_payment=monthly,
+            insurance_purchased=False,
+            status=FinanceStatus.ACTIVE,
+            terms_acknowledged=True,
+            terms_text=(
+                f"Installment plan for aa-shop order #{order.reference} "
+                f"from {order.shop.name if order.shop else 'Unknown Shop'}. "
+                f"Items: {item_summary}. "
+                f"Total: {order_total} ISK split over {offer.term_months} months. "
+                f"Monthly: {monthly} ISK. Total with interest: {total} ISK. "
+                f"The shop owner will hold the order until this plan is fully paid off. "
+                f"Contact the shop owner for delivery once paid off."
+            ),
+            acknowledged_at=now,
+        )
+
+        helpers.build_installment_schedule(fa)
+
+        helpers.log_action(
+            "AASHOP_INSTALLMENT_CREATED", performed_by=request.user,
+            finance_agreement=fa,
+            detail=f"Installment plan {fa.id} created for aa-shop order #{order.reference}, "
+                   f"total {order_total} ISK over {offer.term_months} months")
+
+        # Notify shop owner and admin channel
+        shop_owner = aashop_integration.get_order_owner_user(order)
+        helpers.notify_admin_webhook(
+            "aashop_installment_created", "Shop Order on Installment Plan — HOLD",
+            f"Finance #{fa.id}: aa-shop order #{order.reference} "
+            f"({order.shop.name if order.shop else 'Unknown'}) is on an installment plan. "
+            f"DO NOT accept/contract until fully paid off. "
+            f"Items: {item_summary}. Total: {order_total} ISK over {offer.term_months} months. "
+            f"Buyer: {request.user.username}",
+            member=request.user)
+        if shop_owner:
+            try:
+                from allianceauth.notifications import notify as auth_notify
+                auth_notify(
+                    shop_owner, "Shop Order on Installment Plan",
+                    f"Order #{order.reference} from {order.shop.name} is on an installment plan "
+                    f"via Ship Finance. Do NOT accept or contract this order until the buyer "
+                    f"has paid off the full balance. You will be notified when it's paid off.",
+                    "warning")
+            except Exception:
+                pass
+
+        messages.success(
+            request,
+            f"Installment plan created! Total: {order_total} ISK over {offer.term_months} months. "
+            f"Monthly: {monthly} ISK. Total with interest: {total} ISK. "
+            f"The shop owner has been notified to hold the order until you've paid it off.")
+        return redirect("shipfinance:my_finances")
+
+    ctx = {
+        "order": order,
+        "order_total": order_total,
+        "item_summary": item_summary,
+        "offers": offers,
+    }
+    return render(request, "shipfinance/finance/aashop_finance_form.html", ctx)
+
+
+# ---------------------------------------------------------------------------
 @login_required
 @permission_required("shipfinance.manage_shipfinance")
 def admin_dashboard(request):
@@ -507,6 +681,7 @@ def admin_dashboard(request):
         "active_finances": FinanceAgreement.objects.filter(status=FinanceStatus.ACTIVE).count(),
         "offers_count": FinanceOffer.objects.count(),
         "georgeforge_available": app_settings.georgeforge_installed(),
+        "aashop_available": app_settings.aashop_installed(),
         "invoices_available": app_settings.invoices_installed(),
     }
     return render(request, "shipfinance/admin/dashboard.html", ctx)
@@ -905,9 +1080,13 @@ def admin_mark_destroyed_finance(request, finance_id):
     fa = get_object_or_404(FinanceAgreement, pk=finance_id)
     if request.method == "POST":
         killmail_url = request.POST.get("killmail_url", "")
-        helpers.mark_ship_destroyed(fa, is_finance=True,
-                                    performed_by=request.user, killmail_url=killmail_url)
-        messages.success(request, f"Marked finance {fa.id} ship as destroyed.")
+        try:
+            helpers.mark_ship_destroyed(fa, is_finance=True,
+                                        performed_by=request.user, killmail_url=killmail_url)
+            messages.success(request, f"Marked finance {fa.id} ship as destroyed.")
+        except ValueError as e:
+            messages.error(request, str(e))
+            return redirect("shipfinance:admin_finances")
     ctx = {"finance": fa}
     return render(request, "shipfinance/admin/mark_destroyed.html", ctx)
 
@@ -917,8 +1096,11 @@ def admin_mark_destroyed_finance(request, finance_id):
 def admin_mark_lost_finance(request, finance_id):
     fa = get_object_or_404(FinanceAgreement, pk=finance_id)
     if request.method == "POST":
-        helpers.mark_ship_lost(fa, is_finance=True, performed_by=request.user)
-        messages.success(request, f"Marked finance {fa.id} ship as lost.")
+        try:
+            helpers.mark_ship_lost(fa, is_finance=True, performed_by=request.user)
+            messages.success(request, f"Marked finance {fa.id} ship as lost.")
+        except ValueError as e:
+            messages.error(request, str(e))
     return redirect("shipfinance:admin_finances")
 
 

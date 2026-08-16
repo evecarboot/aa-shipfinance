@@ -239,6 +239,9 @@ _WEBHOOK_COLORS = {
     "finance_lost": 0x95a5a6,        # gray
     "gf_installment_created": 0xf39c12,  # orange
     "gf_installment_paid_off": 0x2ecc71, # green
+    "aashop_installment_created": 0x1abc9c,  # teal
+    "aashop_installment_paid_off": 0x2ecc71,  # green
+    "aashop_installment_defaulted": 0xe74c3c,  # red
 }
 
 
@@ -356,6 +359,12 @@ def mark_ship_destroyed(rental_or_finance, is_finance, performed_by=None,
     if is_finance:
         fa = rental_or_finance
         stock = fa.ship_stock
+        # GeorgeForge and aa-shop installment plans have no physical stock;
+        # "destroyed" doesn't apply — use "defaulted" instead.
+        if stock is None:
+            raise ValueError(
+                f"Finance {fa.id} has no physical ship stock (GeorgeForge/aa-shop "
+                "installment plan). Use mark_finance_defaulted instead.")
         stock.state = ShipStockState.DESTROYED
         stock.save()
         if fa.insurance_purchased and fa.insurance_coverage_amount > 0:
@@ -427,6 +436,12 @@ def mark_ship_lost(rental_or_finance, is_finance, performed_by=None):
     if is_finance:
         fa = rental_or_finance
         stock = fa.ship_stock
+        # GeorgeForge and aa-shop installment plans have no physical stock;
+        # "lost" doesn't apply — use "defaulted" instead.
+        if stock is None:
+            raise ValueError(
+                f"Finance {fa.id} has no physical ship stock (GeorgeForge/aa-shop "
+                "installment plan). Use mark_finance_defaulted instead.")
         stock.state = ShipStockState.LOST
         stock.save()
         fa.status = FinanceStatus.DEFAULTED
@@ -481,6 +496,24 @@ def mark_finance_paid_off(fa, performed_by=None):
             f"Finance #{fa.id}: GeorgeForge order #{fa.georgeforge_order_id} "
             f"({fa.georgeforge_item_name}) fully paid off. Ship ready to build.",
             member=fa.member)
+    elif fa.is_aashop:
+        # aa-shop installment plan: notify shop owner to proceed with contract
+        log_action("FINANCE_PAID_OFF", performed_by=performed_by,
+                   finance_agreement=fa,
+                   detail=f"Finance {fa.id} paid off. aa-shop order #{fa.aashop_order_reference} "
+                          "ready to contract.")
+        notify_member(
+            fa.member, "Installment Plan Complete!",
+            f"You've fully paid off your aa-shop order "
+            f"({fa.aashop_item_summary}, order #{fa.aashop_order_reference}). "
+            f"Contact the shop owner to arrange delivery.",
+            eve_character=fa.member_character)
+        notify_admin_webhook(
+            "aashop_installment_paid_off", "Shop Order Paid Off — Ready to Contract",
+            f"Finance #{fa.id}: aa-shop order #{fa.aashop_order_reference} "
+            f"({fa.aashop_item_summary}) fully paid off by {fa.member.username}. "
+            f"The shop owner can now accept the order and contract the items.",
+            member=fa.member)
     else:
         stock = fa.ship_stock
         if stock:
@@ -517,3 +550,12 @@ def mark_finance_defaulted(fa, performed_by=None, detail=""):
         "finance_defaulted", "Finance Defaulted",
         f"Finance #{fa.id}: {item_name} defaulted. {detail or 'Marked by admin.'}",
         member=fa.member)
+    # For aa-shop installment plans, notify the shop owner that the order
+    # can be declined/cancelled since the buyer has defaulted.
+    if fa.is_aashop:
+        notify_admin_webhook(
+            "aashop_installment_defaulted", "Shop Order Installment Defaulted",
+            f"Finance #{fa.id}: aa-shop order #{fa.aashop_order_reference} "
+            f"({fa.aashop_item_summary}) defaulted by {fa.member.username}. "
+            f"The shop owner can now decline/cancel this order.",
+            member=fa.member)

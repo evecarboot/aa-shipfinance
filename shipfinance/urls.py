@@ -15,6 +15,8 @@ urlpatterns = [
     path("my-finances/", views.my_finances, name="my_finances"),
     path("georgeforge/orders/", views.georgeforge_orders, name="georgeforge_orders"),
     path("georgeforge/orders/<int:order_id>/finance/", views.finance_georgeforge_deposit, name="finance_georgeforge_deposit"),
+    path("aashop/orders/", views.aashop_orders, name="aashop_orders"),
+    path("aashop/orders/<int:order_id>/finance/", views.finance_aashop_order, name="finance_aashop_order"),
 
     # Admin: doctrine fits
     path("admin/", views.admin_dashboard, name="admin_dashboard"),

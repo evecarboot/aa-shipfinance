@@ -16,6 +16,7 @@
               <td>
                 {{ f.item_display_name }}
                 {% if f.is_georgeforge %}<span class="badge bg-info">GF Installments</span>{% endif %}
+                {% if f.is_aashop %}<span class="badge bg-secondary">Shop Installments</span>{% endif %}
               </td>
               <td>{{ f.member.username }}</td>
               <td>{{ f.principal }} ISK</td>
@@ -29,10 +30,12 @@
                 <form method="post" action="{% url 'shipfinance:admin_mark_paid_off' f.id %}" class="d-inline" onsubmit="return confirm('Mark as paid off?')">
                   {% csrf_token %}<button class="btn btn-sm btn-outline-success">{% trans "Paid Off" %}</button>
                 </form>
+                {% if f.ship_stock %}
                 <a href="{% url 'shipfinance:admin_mark_destroyed_finance' f.id %}" class="btn btn-sm btn-outline-warning">{% trans "Destroyed" %}</a>
                 <form method="post" action="{% url 'shipfinance:admin_mark_lost_finance' f.id %}" class="d-inline" onsubmit="return confirm('Mark as lost/unaccounted?')">
                   {% csrf_token %}<button class="btn btn-sm btn-outline-danger">{% trans "Lost" %}</button>
                 </form>
+                {% endif %}
                 <form method="post" action="{% url 'shipfinance:admin_mark_defaulted' f.id %}" class="d-inline" onsubmit="return confirm('Mark as defaulted?')">
                   {% csrf_token %}<button class="btn btn-sm btn-outline-danger">{% trans "Defaulted" %}</button>
                 </form>

@@ -113,6 +113,11 @@ def georgeforge_installed():
     return apps.is_installed("georgeforge")
 
 
+def aashop_installed():
+    """True if aa-shop is installed (optional installment plans for shop orders)."""
+    return apps.is_installed("shop")
+
+
 def corptools_installed():
     """True if corp-tools is installed (used for asset tracking)."""
     return apps.is_installed("corptools")

@@ -1,0 +1,58 @@
+{% extends "shipfinance/base.html" %}
+{% load i18n %}
+{% block content %}
+<div class="container py-4">
+  {% include "shipfinance/partials/messages.html" %}
+  <h1 class="mb-4"><i class="fas fa-shopping-cart me-2"></i>{% trans "Shop Order Installment Plans" %}</h1>
+  <p class="text-secondary mb-4">
+    {% trans "Split the total cost of your aa-shop orders into monthly payments. The shop owner will hold your order until it's fully paid off." %}
+  </p>
+
+  <div class="alert alert-secondary mb-4">
+    <small>
+      {% blocktrans %}
+      <strong>Note:</strong> aa-shop has no automatic payment hold. When you start an installment plan,
+      the shop owner is notified to hold your order manually. Once you've paid off the full balance,
+      they're notified to proceed with the contract. Only orders with a fixed price are eligible
+      (not "Ask" price orders).
+      {% endblocktrans %}
+    </small>
+  </div>
+
+  {% if orders %}
+  <div class="card shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0">
+          <thead>
+            <tr><th>{% trans "Order #" %}</th><th>{% trans "Shop" %}</th><th>{% trans "Items" %}</th><th>{% trans "Total" %}</th><th>{% trans "Status" %}</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for order in orders %}
+            <tr>
+              <td>#{{ order.reference }}</td>
+              <td>{{ order.shop_name }}</td>
+              <td>{{ order.item_summary }}</td>
+              <td>{{ order.estimated_total|floatformat:0 }} ISK</td>
+              <td><span class="badge bg-warning">{{ order.status|title }}</span></td>
+              <td>
+                <a href="{% url 'shipfinance:finance_aashop_order' order.id %}" class="btn btn-primary btn-sm">
+                  <i class="fas fa-coins me-1"></i>{% trans "Pay in Installments" %}
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-info">
+    {% trans "No aa-shop orders available for installment plans. Place an order with a fixed price on an aa-shop storefront first, then come back here." %}
+  </div>
+  {% endif %}
+
+  <a href="{% url 'shipfinance:index' %}" class="btn btn-outline-secondary mt-3">{% trans "Back" %}</a>
+</div>
+{% endblock %}

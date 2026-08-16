@@ -72,6 +72,43 @@ If a GF item has **no deposit**, GF skips "Awaiting Deposit" and goes straight t
 
 If an admin wants to offer installment plans on a GF item, they must set a deposit on it (even a small one). Without a deposit, the order isn't eligible for installment plans.
 
+### aa-shop installment plans (optional)
+
+If [aa-shop](https://pypi.org/project/aa-shop/) is installed, members can **split the total cost of their aa-shop orders into monthly installments** instead of paying upfront.
+
+aa-shop is a public asset shop plugin where members list items from their in-game assets and buyers place orders. The shop owner manually contracts items in-game — **aa-shop has no automatic payment gate**. So installment plans work on a manual-gate basis:
+
+1. Member places an order on an aa-shop storefront → order status = Pending
+2. Member comes to this plugin → "Shop Order Installment Plans"
+3. Member picks a payment plan (term + interest rate) and acknowledges terms
+4. This plugin creates monthly installment invoices for the **full order total**
+5. The shop owner is notified (via the admin webhook + an in-Auth notification): **"Order #ABC is on an installment plan — do not contract until paid off"**
+6. The shop owner holds the order manually (does not accept/contract)
+7. When all installments are paid → the shop owner is notified: **"Order #ABC paid off — ready to contract"**
+8. The shop owner accepts the order and contracts the items as normal
+
+#### Eligibility
+
+- Only **Auth members** can use installment plans (the order's buyer must be linked to an Auth user via character ownership). Public buyers who aren't Auth members can't finance.
+- Only **Pending** orders are eligible (not Accepted, Completed, Declined, or Cancelled).
+- Only orders with a **fixed price** are eligible. "Ask" price orders (where the buyer and shop owner negotiate the price out-of-band) are not eligible — negotiate a fixed price first, then finance.
+- An order can only have **one** installment plan at a time.
+
+#### Setup
+
+1. Install [aa-shop](https://pypi.org/project/aa-shop/) and add `"shop"` to `INSTALLED_APPS`
+2. Add `"storefront"` to `APPS_WITH_PUBLIC_VIEWS` (per aa-shop's docs)
+3. Configure aa-shop shops and listings as normal
+4. This plugin automatically detects aa-shop and shows the "Shop Order Installment Plans" section on the member dashboard
+5. Make sure the admin webhook is configured (see [Webhook notifications](#webhook-notifications)) so shop owners get notified about held/paid-off orders
+
+#### Limitations
+
+- The shop owner must manually hold orders — aa-shop has no programmatic payment gate. If the shop owner contracts the items before the installment plan is paid off, that's outside this plugin's control.
+- This plugin does not modify aa-shop's order status. The order stays "Pending" in aa-shop until the shop owner manually accepts it after the installment plan is paid off.
+- Multi-item carts are supported — the total is financed as a single installment plan.
+- If a buyer defaults on the installment plan, the shop owner is free to decline/cancel the aa-shop order as they see fit.
+
 ### Trust model
 
 - **Request-only access group**: admins curate who can use the plugin

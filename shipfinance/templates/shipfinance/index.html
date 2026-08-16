@@ -82,6 +82,16 @@
         <i class="fas fa-coins me-1"></i>{% trans "Pay in Installments" %}
       </a>
       {% endif %}
+
+      {% if aashop_available %}
+      <h3 class="mt-3"><i class="fas fa-shopping-cart me-2"></i>{% trans "Shop Order Installment Plans" %}</h3>
+      <p class="text-secondary">
+        {% trans "Split the total cost of your aa-shop orders into monthly payments. The shop owner holds the order until it's paid off." %}
+      </p>
+      <a href="{% url 'shipfinance:aashop_orders' %}" class="btn btn-outline-primary btn-sm">
+        <i class="fas fa-coins me-1"></i>{% trans "Pay in Installments" %}
+      </a>
+      {% endif %}
     </div>
   </div>
 </div>
